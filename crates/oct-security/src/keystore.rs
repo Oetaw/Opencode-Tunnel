@@ -250,6 +250,13 @@ mod tests {
         }
     }
 
+    // GitHub's Ubuntu runners have no Secret Service session, so the platform
+    // keyring backend cannot initialize there. The mock-store path is still
+    // exercised on macOS/Windows and by the local keyring test.
+    #[cfg_attr(
+        target_os = "linux",
+        ignore = "GitHub Ubuntu runners have no Secret Service session"
+    )]
     #[test]
     fn keyring_backend_keeps_the_secret_out_of_the_metadata_file() {
         keyring_core::set_default_store(keyring_core::mock::Store::new().unwrap());

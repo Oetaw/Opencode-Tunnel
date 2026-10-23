@@ -58,6 +58,26 @@ jobs:
       - name: Workspace tests
         run: cargo test --workspace --locked
 
+  latest:
+    name: latest Rust check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # Keep the pinned 1.93.1 toolchain as the release baseline, but catch
+      # breakage against the latest stable compiler early.
+      - name: Install latest stable Rust
+        uses: dtolnay/rust-toolchain@1.99.0
+
+      - name: Cache cargo and target
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: latest-1.99
+
+      - name: Check workspace on latest Rust
+        run: cargo +1.99.0 check --workspace --all-targets --locked
+
   deny:
     name: dependency and license policy
     runs-on: ubuntu-latest

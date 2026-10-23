@@ -1,12 +1,20 @@
 [advisories]
 version = 2
 yanked = "warn"
+# zbus 5 / keyring 4.2 still pull these renamed-but-unmaintained crates.
+# There is no safe upgrade available yet; track the zbus 6 migration.
+ignore = [
+  "RUSTSEC-2026-0370", # zvariant
+  "RUSTSEC-2026-0371", # zbus_names
+  "RUSTSEC-2026-0372", # zvariant_derive
+]
 
 [licenses]
 version = 2
 allow = [
   "Apache-2.0",
   "BSD-2-Clause",
+  "CDLA-Permissive-2.0",
   "BSD-3-Clause",
   "ISC",
   "MIT",
