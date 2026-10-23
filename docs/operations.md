@@ -16,6 +16,7 @@ public; the relay stays on a private interface/network.
 ## Health checks
 
 - Relay liveness/readiness: `GET /healthz` (JSON).
+- Relay Prometheus metrics: `GET /metrics` (internal only; not proxied publicly).
 - Client/relay probe: `oct status --relay wss://relay.example.com/oct/v1`.
 - Host: `systemctl --user status oct-host`.
 - OpenCode: `curl -u "opencode:$OPENCODE_PASSWORD" http://127.0.0.1:4096/api/info`.

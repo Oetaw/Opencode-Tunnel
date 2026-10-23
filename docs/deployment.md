@@ -29,7 +29,8 @@ kubectl apply -k deploy/kubernetes
 The manifests include a non-root deployment, probes, resource limits, PDB,
 HPA, NetworkPolicy and an Ingress example. Set the image, host and TLS secret
 for your cluster. `/healthz` is public through the Ingress; `/metrics` is
-intended for in-cluster Prometheus only.
+intended for in-cluster Prometheus only. The Docker/Caddy reference proxies only
+`/oct/v1` and `/healthz`, never `/metrics`.
 
 ## systemd host
 
