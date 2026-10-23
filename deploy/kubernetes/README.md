@@ -23,8 +23,8 @@ Notes:
   through the Ingress.
 - Endpoint E2EE remains mandatory. The relay still sees only ciphertext.
 - The relay keeps rooms in memory. This base intentionally runs one active
-  replica; do not raise `replicas` or enable `hpa.yaml` until a distributed
-  room/affinity layer exists, or hosts and clients may land on different pods.
+  replica; do not raise `replicas` until a distributed room/affinity layer
+  exists, or hosts and clients may land on different pods.
 - `pdb.yaml` protects the active pod during voluntary disruptions. A rolling
   update uses `Recreate` to avoid two room tables serving one relay URL.
 - For multi-region/HA, run independent relay deployments with distinct DNS
