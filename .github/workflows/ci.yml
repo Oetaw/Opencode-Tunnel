@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@1.93.1
@@ -42,7 +42,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@1.93.1
@@ -63,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       # Keep the pinned 1.93.1 toolchain as the release baseline, but catch
       # breakage against the latest stable compiler early.
@@ -82,7 +82,7 @@ jobs:
     name: dependency and license policy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
@@ -98,7 +98,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@1.93.1
