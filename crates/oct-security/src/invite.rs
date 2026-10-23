@@ -1,3 +1,4 @@
+use std::fmt;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -22,7 +23,7 @@ const INVITE_VERSION: u8 = 1;
 const MAX_INVITE_LEN: usize = 8192;
 const SECRET_LEN: usize = 32;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Invite {
     pub version: u8,
     pub relay_url: String,
@@ -33,6 +34,21 @@ pub struct Invite {
     pub expires_at: u64,
     #[serde(default)]
     pub label: Option<String>,
+}
+
+impl fmt::Debug for Invite {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Invite")
+            .field("version", &self.version)
+            .field("relay_url", &self.relay_url)
+            .field("room", &self.room)
+            .field("token", &"<redacted>")
+            .field("host_public_key", &self.host_public_key)
+            .field("secret", &"<redacted>")
+            .field("expires_at", &self.expires_at)
+            .field("label", &self.label)
+            .finish()
+    }
 }
 
 impl Invite {
@@ -254,6 +270,15 @@ mod tests {
             Invite::decode("octpair1:not-base64!"),
             Err(SecurityError::InvalidInvite)
         ));
+    }
+
+    #[test]
+    fn debug_redacts_token_and_secret() {
+        let invite = invite();
+        let text = format!("{invite:?}");
+        assert!(!text.contains(&invite.token));
+        assert!(!text.contains(&invite.secret));
+        assert!(text.contains("<redacted>"));
     }
 
     #[test]
