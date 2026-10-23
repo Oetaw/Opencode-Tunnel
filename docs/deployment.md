@@ -18,7 +18,9 @@ The relay container is non-root, read-only, capability-dropped and resource
 limited. Edge per-IP rate limiting and monitoring belong at the ingress or
 firewall layer. The relay defaults to 512 rooms and a 32 MiB aggregate
 peer-queue budget; tune `--max-rooms` and `--max-queued-bytes` to the container
-memory limit rather than removing them.
+memory limit rather than removing them. These bounds prevent unbounded memory
+growth, not unauthenticated room exhaustion; keep per-IP connection limits and
+alerting at the edge.
 
 ## Kubernetes
 

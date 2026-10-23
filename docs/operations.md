@@ -67,6 +67,10 @@ metadata even though payloads remain redacted.
 ## Incident response
 
 - Lost client: `oct revoke <id> --state-dir <host-state> --terminate-active`.
+- Revoked client: revocation removes device authorization, but the client may
+  still know the relay room token. It cannot decrypt traffic; it can attempt
+  relay-level denial of service. Rotate `OCT_ROOM`/`OCT_TOKEN` and restart the
+  host and remaining clients after revoking an untrusted device.
 - Leaked invite: let it expire; invites are single-use and short-lived.
 - Leaked host key: stop the host, replace its identity, re-pair all clients.
 - Leaked relay token: change the room/token, restart host and clients.
