@@ -473,3 +473,79 @@ async fn host_evicts_client_and_replacement_can_join() {
     shutdown.cancel();
     let _ = server.await;
 }
+
+#[tokio::test]
+async fn arbitrary_host_credentials_cannot_create_a_room() {
+    let relay = Relay::bind(RelayConfig {
+        listen: "127.0.0.1:0".parse().unwrap(),
+        admission_token: Some(ADMISSION.into()),
+        ..RelayConfig::default()
+    })
+    .await
+    .unwrap();
+    let addr = relay.local_addr();
+    let shutdown = CancellationToken::new();
+    let serve_shutdown = shutdown.clone();
+    let server = tokio::spawn(async move { relay.serve(serve_shutdown).await });
+
+    let (room, arbitrary_client_token) = generate_room_credentials();
+    let mut squatter = connect(addr).await;
+    send_control(
+        &mut squatter,
+        RelayControl::Hello {
+            protocol: RELAY_PROTOCOL,
+            room: room.clone(),
+            role: RelayRole::Host,
+            token: "c".repeat(64),
+            client_token: Some(arbitrary_client_token.clone()),
+            client_version: None,
+        },
+    )
+    .await;
+    assert!(matches!(
+        recv_control(&mut squatter).await,
+        RelayControl::Error { ref code, .. } if code == "UNAUTHORIZED"
+    ));
+
+    let mut client = connect(addr).await;
+    send_control(
+        &mut client,
+        RelayControl::Hello {
+            protocol: RELAY_PROTOCOL,
+            room,
+            role: RelayRole::Client,
+            token: arbitrary_client_token,
+            client_token: None,
+            client_version: None,
+        },
+    )
+    .await;
+    assert!(matches!(
+        recv_control(&mut client).await,
+        RelayControl::Error { ref code, .. } if code == "UNAUTHORIZED"
+    ));
+
+    // A legitimate host can still create this room; the rejected sockets did
+    // not leave empty room state behind.
+    let (room, _) = generate_room_credentials();
+    let mut legitimate = connect(addr).await;
+    send_control(
+        &mut legitimate,
+        RelayControl::Hello {
+            protocol: RELAY_PROTOCOL,
+            room,
+            role: RelayRole::Host,
+            token: ADMISSION.into(),
+            client_token: Some(generate_room_credentials().1),
+            client_version: None,
+        },
+    )
+    .await;
+    assert!(matches!(
+        recv_control(&mut legitimate).await,
+        RelayControl::Ready { .. }
+    ));
+
+    shutdown.cancel();
+    let _ = server.await;
+}
