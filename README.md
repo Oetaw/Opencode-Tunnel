@@ -33,7 +33,7 @@ Requirements:
   static binary runs.
 
 ```sh
-git clone https://github.com/anomalyco/oct.git
+git clone https://github.com/Oetaw/Opencode-Tunnel.git
 cd oct
 cargo build --release -p oct-cli --bin oct
 install -m 755 target/release/oct /usr/local/bin/oct

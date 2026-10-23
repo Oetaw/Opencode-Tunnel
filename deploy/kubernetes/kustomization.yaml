@@ -12,5 +12,5 @@ resources:
   # Enable when Prometheus Operator CRDs are installed:
   # - servicemonitor.yaml
 images:
-  - name: ghcr.io/anomalyco/oct
+  - name: ghcr.io/oetaw/opencode-tunnel
     newTag: 0.1.0

@@ -1,6 +1,6 @@
 [Unit]
 Description=OCT remote host agent (outbound WSS connector)
-Documentation=https://github.com/anomalyco/oct
+Documentation=https://github.com/Oetaw/Opencode-Tunnel
 Wants=network-online.target
 After=network-online.target opencode.service
 

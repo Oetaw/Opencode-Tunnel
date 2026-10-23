@@ -36,7 +36,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: relay
-          image: ghcr.io/anomalyco/oct:0.1.0
+          image: ghcr.io/oetaw/opencode-tunnel:0.1.0
           imagePullPolicy: IfNotPresent
           args:
             - relay
