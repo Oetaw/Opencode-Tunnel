@@ -1,3 +1,4 @@
+use std::io::IsTerminal;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -716,6 +717,9 @@ fn resolve_token(token: Option<String>) -> Result<String> {
             Ok(token)
         }
         None => {
+            if !std::io::stderr().is_terminal() {
+                bail!("room token is required in non-interactive mode; set --token or OCT_TOKEN");
+            }
             let (_, token) = generate_room_credentials();
             eprintln!("one-time room token (share with the other endpoint): {token}");
             Ok(token)

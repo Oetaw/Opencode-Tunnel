@@ -28,6 +28,10 @@ oct host \
 Useful flags: `--ping-secs`, `--reconnect-max-secs`,
 `--backend-password-env`, `--use-keyring`.
 
+If `OCT_TOKEN` is omitted, `host` and `tui` generate a one-time token only
+when stderr is a terminal. Non-interactive services must set `OCT_TOKEN` (or
+`--token`) explicitly; the CLI refuses to write a generated token to a log.
+
 `oct host` does not start OpenCode. Run `opencode serve --hostname 127.0.0.1
 --port 4096` under its own service or TUI.
 
