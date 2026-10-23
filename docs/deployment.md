@@ -15,6 +15,11 @@ Caddy publishes 80/443 and obtains a certificate. The relay binds a private
 container interface with `--allow-public`; do not publish its port. Health:
 `https://<domain>/healthz`.
 
+If nginx is the edge, use [`deploy/relay/nginx.conf.example`](../deploy/relay/nginx.conf.example)
+as a starting point. It proxies only exact `/oct/v1` and `/healthz`, adds HSTS,
+and applies per-IP upgrade rate and concurrent-connection limits. The live edge
+must be checked separately; the example is not automatically applied.
+
 `OCT_RELAY_ADMISSION_TOKEN` is a required secret. Configure the same value as
 `OCT_TOKEN` on the host. Room creation and the host role require it, so a
 client token can never create rooms or squat the host slot. Never put it in the

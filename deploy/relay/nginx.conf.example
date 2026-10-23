@@ -1,0 +1,56 @@
+# Reference nginx TLS/WSS edge for OCT.
+#
+# Copy into the nginx http{} context (limit zones) and a server{} block, then
+# replace the certificate paths and relay upstream. The relay itself must still
+# be started with the same OCT_RELAY_ADMISSION_TOKEN as the host's OCT_TOKEN.
+#
+# If nginx is behind a CDN, configure real_ip_header/set_real_ip_from for that
+# CDN first; otherwise $binary_remote_addr is the CDN address and the per-IP
+# limits below collapse into one shared bucket.
+
+# Per-client WebSocket upgrade rate and concurrent connection cap.
+limit_req_zone $binary_remote_addr zone=oct_upgrade:10m rate=10r/s;
+limit_conn_zone $binary_remote_addr zone=oct_conn:10m;
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name relay.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/relay.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/relay.example.com/privkey.pem;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    server_tokens off;
+
+    # Exactly these two paths are public. /metrics stays internal.
+    location = /oct/v1 {
+        limit_req zone=oct_upgrade burst=20 nodelay;
+        limit_conn oct_conn 8;
+
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+    }
+
+    location = /healthz {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        access_log off;
+    }
+
+    location / {
+        return 404;
+    }
+}

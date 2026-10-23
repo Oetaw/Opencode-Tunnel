@@ -25,6 +25,7 @@ All notable changes are recorded here. The project follows Semantic Versioning.
 - A host evicts a client slot after a failed Noise/device authorization so a
   revoked client cannot hold the client role indefinitely.
 - Relay admission tokens are required and redacted from debug output.
+- Added an nginx edge reference with HSTS and per-IP upgrade/connection limits.
 
 ### Changed
 
