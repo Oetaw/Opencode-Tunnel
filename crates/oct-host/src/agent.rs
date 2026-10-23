@@ -144,14 +144,17 @@ impl HostAgent {
         match oct_transport::register(&conn, hello, RELAY_READY_TIMEOUT).await {
             Ok(_) => {}
             Err(TransportError::RelayRejected { code, .. }) if code == "UNAUTHORIZED" => {
+                // A different token can pin the room first (for example, a
+                // stale or revoked peer). Treat this as transient instead of
+                // exiting: a wrong token must not let a third party stop the
+                // host process.
                 conn.close().await;
-                return ConnectionExit::Fatal(HostError::InvalidConfig(
-                    "relay rejected host registration".into(),
-                ));
+                tracing::warn!("relay rejected host registration (room token mismatch); retrying");
+                return ConnectionExit::Retry;
             }
             Err(_) => {
-                // ROLE_OCCUPIED/ROOM_FULL are transient during reconnect;
-                // retry with backoff instead of exiting permanently.
+                // ROLE_OCCUPIED/ROOM_FULL/SERVER_BUSY are transient during
+                // reconnect; retry with backoff instead of exiting permanently.
                 conn.close().await;
                 return ConnectionExit::Retry;
             }

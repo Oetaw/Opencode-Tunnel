@@ -45,6 +45,10 @@ spec:
             - --allow-public
             - --public-url
             - wss://relay.example.com/oct/v1
+            - --max-rooms
+            - "512"
+            - --max-queued-bytes
+            - "33554432"
           ports:
             - name: http
               containerPort: 8080

@@ -28,6 +28,12 @@ pub struct RelayConfig {
     /// anti-flood control; per-IP limits belong at the TLS terminator.
     pub connection_rate_per_sec: u32,
     pub connection_burst: u32,
+    /// Maximum number of rooms held in memory at once.
+    pub max_rooms: usize,
+    /// Maximum aggregate bytes queued for delivery to relay peers. This is a
+    /// hard backpressure bound; a slow peer cannot make the relay buffer an
+    /// unbounded number of opaque frames.
+    pub max_queued_bytes: usize,
     /// Time a room may sit with no connected peer before eviction.
     pub room_idle_timeout: Duration,
     /// Deadline for the first RelayControl::Hello message.
@@ -46,6 +52,8 @@ impl Default for RelayConfig {
             max_connections_per_room: 2,
             connection_rate_per_sec: 100,
             connection_burst: 200,
+            max_rooms: 512,
+            max_queued_bytes: 32 * 1024 * 1024,
             room_idle_timeout: Duration::from_secs(120),
             hello_timeout: Duration::from_secs(10),
             cleanup_interval: Duration::from_secs(30),
@@ -73,6 +81,14 @@ impl RelayConfig {
         if self.connection_rate_per_sec == 0 || self.connection_burst == 0 {
             return Err(RelayError::Config(
                 "connection rate and burst must be non-zero".into(),
+            ));
+        }
+        if self.max_rooms == 0 {
+            return Err(RelayError::Config("max_rooms must be non-zero".into()));
+        }
+        if self.max_queued_bytes < self.max_frame_bytes {
+            return Err(RelayError::Config(
+                "max_queued_bytes must be at least max_frame_bytes".into(),
             ));
         }
         if self.hello_timeout.is_zero()

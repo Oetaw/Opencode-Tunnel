@@ -33,6 +33,8 @@ pub enum RelayError {
     InvalidToken,
     #[error("room is full")]
     RoomFull,
+    #[error("relay is at its room capacity")]
+    AtCapacity,
     #[error("peer is offline")]
     PeerOffline,
     #[error("relay handshake timed out")]

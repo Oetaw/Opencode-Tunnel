@@ -59,6 +59,12 @@ struct RelayArgs {
     /// Explicitly allow a non-loopback bind. Requires Phase 2 E2EE on both endpoints.
     #[arg(long)]
     allow_public: bool,
+    /// Maximum number of concurrent in-memory rooms.
+    #[arg(long, default_value_t = 512)]
+    max_rooms: usize,
+    /// Maximum aggregate bytes queued for relay peers.
+    #[arg(long, default_value_t = 33_554_432)]
+    max_queued_bytes: usize,
 }
 
 #[derive(Args)]
@@ -223,6 +229,8 @@ async fn run_relay(args: RelayArgs) -> Result<()> {
         listen: args.listen,
         public_url: args.public_url,
         allow_public: args.allow_public,
+        max_rooms: args.max_rooms,
+        max_queued_bytes: args.max_queued_bytes,
         ..RelayConfig::default()
     })
     .await
@@ -412,20 +420,70 @@ async fn run_invite(args: InviteArgs) -> Result<()> {
 
 fn write_private_text(path: &std::path::Path, value: &str) -> Result<()> {
     use std::io::Write;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).context("create invite directory")?;
+
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new("."));
+    std::fs::create_dir_all(parent).context("create invite directory")?;
+
+    // Write to a fresh inode and rename it over the destination. This avoids
+    // following a pre-existing symlink and guarantees the final file is 0600
+    // even when the destination already existed with a permissive mode.
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    let mut attempt = 0u32;
+    loop {
+        let temp = parent.join(format!(
+            ".oct-invite-{}-{nonce}-{attempt}.tmp",
+            std::process::id()
+        ));
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+
+        let result = (|| -> Result<()> {
+            let mut file = options.open(&temp).context("create invite output")?;
+            file.write_all(value.as_bytes())
+                .context("write invite output")?;
+            file.sync_all().context("sync invite output")?;
+            drop(file);
+
+            match std::fs::rename(&temp, path) {
+                Ok(()) => Ok(()),
+                // Windows does not replace an existing destination with
+                // rename(2). Removing the destination removes a symlink, not
+                // its target, so the no-follow property is preserved.
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                    std::fs::remove_file(path).context("replace invite output")?;
+                    std::fs::rename(&temp, path).context("replace invite output")
+                }
+                Err(error) => Err(error).context("replace invite output"),
+            }
+        })();
+
+        match result {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                let _ = std::fs::remove_file(&temp);
+                if error
+                    .downcast_ref::<std::io::Error>()
+                    .is_some_and(|io| io.kind() == std::io::ErrorKind::AlreadyExists)
+                    && attempt < 16
+                {
+                    attempt += 1;
+                    continue;
+                }
+                return Err(error);
+            }
+        }
     }
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options.open(path).context("open invite output")?;
-    file.write_all(value.as_bytes())
-        .context("write invite output")?;
-    Ok(())
 }
 
 async fn run_pair(args: PairArgs) -> Result<()> {
@@ -684,5 +742,49 @@ mod tests {
     #[test]
     fn rejects_unsupported_health_scheme() {
         assert!(relay_health_url("ftp://127.0.0.1:8080").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn invite_output_is_private_and_does_not_follow_symlinks() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("invite.txt");
+        std::fs::write(&output, "old").unwrap();
+        std::fs::set_permissions(&output, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        write_private_text(&output, "secret").unwrap();
+        assert_eq!(std::fs::read_to_string(&output).unwrap(), "secret");
+        assert_eq!(
+            std::fs::symlink_metadata(&output)
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+
+        let target = dir.path().join("target.txt");
+        std::fs::write(&target, "keep me").unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let link = dir.path().join("link.txt");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        write_private_text(&link, "new secret").unwrap();
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "keep me");
+        assert!(!std::fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(std::fs::read_to_string(&link).unwrap(), "new secret");
+        assert_eq!(
+            std::fs::symlink_metadata(&link)
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
     }
 }

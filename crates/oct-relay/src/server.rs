@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
@@ -21,6 +21,10 @@ use crate::config::RelayConfig;
 use crate::metrics::Metrics;
 use crate::rooms::{Outbound, Rooms, SharedRooms, OUTBOUND_QUEUE};
 use crate::RelayError;
+
+/// A peer that stops reading must not pin relay memory forever. The writer
+/// times out individual sends and closes the socket.
+const OUTBOUND_SEND_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// A bound relay. Call [`Relay::serve`] to accept connections.
 pub struct Relay {
@@ -74,6 +78,8 @@ impl Relay {
         let listener = TcpListener::bind(config.listen).await?;
         let rooms: SharedRooms = Arc::new(Rooms::new(
             config.max_connections_per_room,
+            config.max_rooms,
+            config.max_queued_bytes,
             config.room_idle_timeout,
         ));
         let metrics = Arc::new(Metrics::default());
@@ -191,22 +197,38 @@ async fn handle_socket(state: Arc<RelayState>, socket: WebSocket, shutdown: Canc
         while let Some(out) = rx.recv().await {
             match out {
                 Outbound::Text(text) => {
-                    if sink.send(Message::Text(text.into())).await.is_err() {
+                    let sent = tokio::time::timeout(
+                        OUTBOUND_SEND_TIMEOUT,
+                        sink.send(Message::Text(text.into())),
+                    )
+                    .await;
+                    if !matches!(sent, Ok(Ok(()))) {
                         break;
                     }
                 }
-                Outbound::Binary(bytes) => {
-                    if sink.send(Message::Binary(bytes)).await.is_err() {
+                Outbound::Binary(frame) => {
+                    let sent = tokio::time::timeout(
+                        OUTBOUND_SEND_TIMEOUT,
+                        sink.send(Message::Binary(frame.data)),
+                    )
+                    .await;
+                    // `frame` is partially moved; its queue-budget permit is
+                    // released when this arm's scope ends, after the send.
+                    if !matches!(sent, Ok(Ok(()))) {
                         break;
                     }
                 }
                 Outbound::Close => {
-                    let _ = sink.send(Message::Close(None)).await;
+                    let _ = tokio::time::timeout(
+                        OUTBOUND_SEND_TIMEOUT,
+                        sink.send(Message::Close(None)),
+                    )
+                    .await;
                     break;
                 }
             }
         }
-        let _ = sink.close().await;
+        let _ = tokio::time::timeout(OUTBOUND_SEND_TIMEOUT, sink.close()).await;
     });
 
     let hello = match read_hello(&state.config, &mut stream).await {
@@ -219,6 +241,7 @@ async fn handle_socket(state: Arc<RelayState>, socket: WebSocket, shutdown: Canc
                 RelayError::InvalidToken => "UNAUTHORIZED",
                 RelayError::RoleOccupied => "ROLE_OCCUPIED",
                 RelayError::RoomFull => "ROOM_FULL",
+                RelayError::AtCapacity => "SERVER_BUSY",
                 _ => "BAD_REQUEST",
             };
             let _ = send_error(&tx, code, &err.to_string()).await;
@@ -248,6 +271,7 @@ async fn handle_socket(state: Arc<RelayState>, socket: WebSocket, shutdown: Canc
                 RelayError::InvalidToken => "UNAUTHORIZED",
                 RelayError::RoleOccupied => "ROLE_OCCUPIED",
                 RelayError::RoomFull => "ROOM_FULL",
+                RelayError::AtCapacity => "SERVER_BUSY",
                 _ => "BAD_REQUEST",
             };
             let _ = send_error(&tx, code, &err.to_string()).await;
@@ -322,17 +346,26 @@ async fn handle_socket(state: Arc<RelayState>, socket: WebSocket, shutdown: Canc
                     reason = "oversized binary";
                     break;
                 }
-                if let Some(peer_tx) = state.rooms.peer_tx(&room_id, role).await {
-                    let len = bytes.len();
-                    if peer_tx.send(Outbound::Binary(bytes)).await.is_err() {
+                let len = bytes.len();
+                let forward = tokio::select! {
+                    _ = shutdown.cancelled() => {
+                        reason = "shutdown";
+                        break;
+                    }
+                    result = state.rooms.send_binary(&room_id, role, bytes) => result,
+                };
+                match forward {
+                    Ok(()) => state.metrics.forwarded(len),
+                    Err(RelayError::PeerOffline) => {
+                        // No peer yet: drop. The endpoint's mux will retry or
+                        // the connection will be replaced on reconnect.
+                        debug!(role = role.label(), "binary frame with no peer");
+                    }
+                    Err(err) => {
+                        debug!(error = %err, "failed to forward binary frame");
                         reason = "peer writer closed";
                         break;
                     }
-                    state.metrics.forwarded(len);
-                } else {
-                    // No peer yet: drop. The endpoint's mux will retry or the
-                    // connection will be replaced on reconnect.
-                    debug!(role = role.label(), "binary frame with no peer");
                 }
             }
             Ok(Message::Close(_)) => break,

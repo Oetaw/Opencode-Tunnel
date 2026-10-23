@@ -1,10 +1,11 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use oct_protocol::relay::{token_matches, RelayRole};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex, OwnedSemaphorePermit, Semaphore};
 
 use crate::RelayError;
 
@@ -12,11 +13,26 @@ pub const OUTBOUND_QUEUE: usize = 64;
 
 pub type ConnectionId = u64;
 
+/// A binary frame waiting in a peer's writer queue. The permit is held until
+/// the writer sends or drops the frame, keeping `max_queued_bytes` honest.
+pub struct QueuedBinary {
+    pub data: Bytes,
+    _permit: OwnedSemaphorePermit,
+}
+
+impl fmt::Debug for QueuedBinary {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("QueuedBinary")
+            .field("bytes", &self.data.len())
+            .finish()
+    }
+}
+
 /// Messages sent from the routing layer to one connection writer.
 #[derive(Debug)]
 pub enum Outbound {
     Text(String),
-    Binary(Bytes),
+    Binary(QueuedBinary),
     Close,
 }
 
@@ -77,14 +93,23 @@ pub struct JoinResult {
 pub struct Rooms {
     inner: Mutex<HashMap<String, Room>>,
     pub(crate) max_connections_per_room: usize,
+    pub(crate) max_rooms: usize,
+    queue_budget: Arc<Semaphore>,
     pub(crate) idle_timeout: Duration,
 }
 
 impl Rooms {
-    pub fn new(max_connections_per_room: usize, idle_timeout: Duration) -> Self {
+    pub fn new(
+        max_connections_per_room: usize,
+        max_rooms: usize,
+        max_queued_bytes: usize,
+        idle_timeout: Duration,
+    ) -> Self {
         Self {
             inner: Mutex::new(HashMap::new()),
             max_connections_per_room,
+            max_rooms,
+            queue_budget: Arc::new(Semaphore::new(max_queued_bytes)),
             idle_timeout,
         }
     }
@@ -100,6 +125,9 @@ impl Rooms {
         tx: mpsc::Sender<Outbound>,
     ) -> Result<JoinResult, RelayError> {
         let mut rooms = self.inner.lock().await;
+        if !rooms.contains_key(room_id) && rooms.len() >= self.max_rooms {
+            return Err(RelayError::AtCapacity);
+        }
         let room = rooms.entry(room_id.to_owned()).or_default();
 
         if room.token.is_empty() {
@@ -149,6 +177,42 @@ impl Rooms {
                 peer_tx: None,
             })
         }
+    }
+
+    /// Forward an opaque binary frame to the room peer, applying the global
+    /// queued-byte budget before enqueuing. Waits when the relay is at its
+    /// memory budget, providing backpressure instead of unbounded growth.
+    pub async fn send_binary(
+        &self,
+        room_id: &str,
+        role: RelayRole,
+        data: Bytes,
+    ) -> Result<(), RelayError> {
+        let peer_tx = {
+            let rooms = self.inner.lock().await;
+            rooms
+                .get(room_id)
+                .and_then(|room| room.peer_slot(role))
+                .map(|peer| peer.tx.clone())
+        };
+        let Some(peer_tx) = peer_tx else {
+            return Err(RelayError::PeerOffline);
+        };
+        let len = u32::try_from(data.len())
+            .map_err(|_| RelayError::Internal("binary frame length overflow".into()))?;
+        let permit = self
+            .queue_budget
+            .clone()
+            .acquire_many_owned(len)
+            .await
+            .map_err(|_| RelayError::Internal("relay queue budget closed".into()))?;
+        peer_tx
+            .send(Outbound::Binary(QueuedBinary {
+                data,
+                _permit: permit,
+            }))
+            .await
+            .map_err(|_| RelayError::PeerOffline)
     }
 
     /// Return the peer's outbound sender for opaque binary forwarding.
@@ -231,3 +295,68 @@ impl Rooms {
 
 /// Arc alias used by the server state.
 pub type SharedRooms = Arc<Rooms>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn queued_bytes_are_bounded_and_released_after_writer_delivery() {
+        let rooms = Rooms::new(2, 4, 100_000, Duration::from_secs(60));
+        let (host_tx, mut host_rx) = mpsc::channel(8);
+        let (client_tx, _client_rx) = mpsc::channel(8);
+        rooms
+            .join(
+                "room-0000000000",
+                RelayRole::Host,
+                &"a".repeat(64),
+                1,
+                host_tx,
+            )
+            .await
+            .unwrap();
+        rooms
+            .join(
+                "room-0000000000",
+                RelayRole::Client,
+                &"a".repeat(64),
+                2,
+                client_tx,
+            )
+            .await
+            .unwrap();
+
+        let payload = Bytes::from(vec![0u8; 60_000]);
+        rooms
+            .send_binary("room-0000000000", RelayRole::Client, payload.clone())
+            .await
+            .unwrap();
+        assert!(
+            tokio::time::timeout(
+                Duration::from_millis(100),
+                rooms.send_binary("room-0000000000", RelayRole::Client, payload.clone())
+            )
+            .await
+            .is_err(),
+            "second frame must wait for the queued-byte budget"
+        );
+
+        drop(host_rx.recv().await.expect("queued frame"));
+        let queued = loop {
+            match host_rx.recv().await.expect("queued frame") {
+                Outbound::Binary(frame) => break frame,
+                Outbound::Text(_) | Outbound::Close => continue,
+            }
+        };
+        drop(queued);
+        assert!(
+            tokio::time::timeout(
+                Duration::from_secs(1),
+                rooms.send_binary("room-0000000000", RelayRole::Client, payload)
+            )
+            .await
+            .is_ok(),
+            "dropping the writer frame must release its budget"
+        );
+    }
+}

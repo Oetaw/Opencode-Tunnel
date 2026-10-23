@@ -16,7 +16,9 @@ container interface with `--allow-public`; do not publish its port. Health:
 
 The relay container is non-root, read-only, capability-dropped and resource
 limited. Edge per-IP rate limiting and monitoring belong at the ingress or
-firewall layer.
+firewall layer. The relay defaults to 512 rooms and a 32 MiB aggregate
+peer-queue budget; tune `--max-rooms` and `--max-queued-bytes` to the container
+memory limit rather than removing them.
 
 ## Kubernetes
 

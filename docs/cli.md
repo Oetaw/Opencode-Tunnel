@@ -95,6 +95,11 @@ oct relay --listen 0.0.0.0:8080 --allow-public \
   --public-url wss://relay.example.com/oct/v1
 ```
 
+`--max-rooms` (default 512) and `--max-queued-bytes` (default 33554432, or
+32 MiB) bound in-memory rooms and slow-peer buffering. If either limit is
+reached, the relay rejects new rooms or applies backpressure instead of growing
+without bound. Keep per-IP connection limiting at the TLS/ingress layer.
+
 Do not expose the relay port directly. Put TLS/WSS in front of it and publish
 only the terminator.
 

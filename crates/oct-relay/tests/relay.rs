@@ -133,6 +133,60 @@ async fn routes_opaque_binary_between_host_and_client() {
 }
 
 #[tokio::test]
+async fn rejects_new_rooms_at_the_configured_capacity() {
+    let relay = Relay::bind(RelayConfig {
+        listen: "127.0.0.1:0".parse().unwrap(),
+        max_rooms: 1,
+        ..RelayConfig::default()
+    })
+    .await
+    .unwrap();
+    let addr = relay.local_addr();
+    let shutdown = CancellationToken::new();
+    let serve_shutdown = shutdown.clone();
+    let server = tokio::spawn(async move { relay.serve(serve_shutdown).await });
+
+    let (room, token) = generate_room_credentials();
+    let mut first = connect(addr).await;
+    send_control(
+        &mut first,
+        RelayControl::Hello {
+            protocol: RELAY_PROTOCOL,
+            room,
+            role: RelayRole::Host,
+            token: token.clone(),
+            client_version: None,
+        },
+    )
+    .await;
+    assert!(matches!(
+        recv_control(&mut first).await,
+        RelayControl::Ready { .. }
+    ));
+
+    let (other_room, other_token) = generate_room_credentials();
+    let mut second = connect(addr).await;
+    send_control(
+        &mut second,
+        RelayControl::Hello {
+            protocol: RELAY_PROTOCOL,
+            room: other_room,
+            role: RelayRole::Host,
+            token: other_token,
+            client_version: None,
+        },
+    )
+    .await;
+    assert!(matches!(
+        recv_control(&mut second).await,
+        RelayControl::Error { ref code, .. } if code == "SERVER_BUSY"
+    ));
+
+    shutdown.cancel();
+    let _ = server.await;
+}
+
+#[tokio::test]
 async fn rejects_duplicate_role_and_bad_token() {
     let relay = Relay::bind(RelayConfig {
         listen: "127.0.0.1:0".parse().unwrap(),

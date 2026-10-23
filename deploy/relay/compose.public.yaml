@@ -25,6 +25,10 @@ services:
       - --allow-public
       - --public-url
       - wss://${OCT_DOMAIN}/oct/v1
+      - --max-rooms
+      - "512"
+      - --max-queued-bytes
+      - "33554432"
     cap_drop:
       - ALL
     security_opt:
