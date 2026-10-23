@@ -27,7 +27,9 @@ kubectl apply -k deploy/kubernetes
 ```
 
 The manifests include a non-root deployment, probes, resource limits, PDB,
-HPA, NetworkPolicy and an Ingress example. Set the image, host and TLS secret
+NetworkPolicy and an Ingress example. The relay keeps rooms in memory, so the
+base runs one active replica with `Recreate`; do not enable the HPA/multi-replica
+files until a distributed room-affinity layer exists. Set the image, host and TLS secret
 for your cluster. `/healthz` is public through the Ingress; `/metrics` is
 intended for in-cluster Prometheus only. The Docker/Caddy reference proxies only
 `/oct/v1` and `/healthz`, never `/metrics`.

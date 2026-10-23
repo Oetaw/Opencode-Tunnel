@@ -9,7 +9,6 @@ resources:
   - ingress.yaml
   - networkpolicy.yaml
   - pdb.yaml
-  - hpa.yaml
   # Enable when Prometheus Operator CRDs are installed:
   # - servicemonitor.yaml
 images:

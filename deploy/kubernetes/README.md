@@ -22,5 +22,10 @@ Notes:
   cluster, but the container port is never exposed outside the cluster except
   through the Ingress.
 - Endpoint E2EE remains mandatory. The relay still sees only ciphertext.
-- Adjust replicas/HPA after measuring room churn; each room is an in-memory
-  host+client pair, so relay affinity is not required for correctness.
+- The relay keeps rooms in memory. This base intentionally runs one active
+  replica; do not raise `replicas` or enable `hpa.yaml` until a distributed
+  room/affinity layer exists, or hosts and clients may land on different pods.
+- `pdb.yaml` protects the active pod during voluntary disruptions. A rolling
+  update uses `Recreate` to avoid two room tables serving one relay URL.
+- For multi-region/HA, run independent relay deployments with distinct DNS
+  names/rooms, or implement distributed room routing first.

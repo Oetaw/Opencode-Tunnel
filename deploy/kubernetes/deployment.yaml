@@ -7,13 +7,13 @@ metadata:
     app.kubernetes.io/name: oct
     app.kubernetes.io/component: relay
 spec:
-  replicas: 2
+  # Rooms are in-memory on one relay process. Multiple replicas would split a
+  # host and client across different room tables. Horizontally scaling requires
+  # a distributed room/affinity layer and is intentionally not enabled here.
+  replicas: 1
   revisionHistoryLimit: 3
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: oct
@@ -34,14 +34,6 @@ spec:
         fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
-      topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app.kubernetes.io/name: oct
-              app.kubernetes.io/component: relay
       containers:
         - name: relay
           image: ghcr.io/anomalyco/oct:0.1.0
