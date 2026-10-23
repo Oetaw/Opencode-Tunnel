@@ -1,0 +1,116 @@
+name: Release
+
+# Tag-triggered build of unsigned binaries. This workflow deliberately makes a
+# DRAFT release: a maintainer must complete the security/release checklist
+# before publication.
+# There is no code signing, notarization, or reproducible-build attestation.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+          - os: macos-15
+            target: aarch64-apple-darwin
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # Uses cargo for native targets and cross for Linux aarch64. The release
+      # profile in Cargo.toml strips symbols.
+      - name: Build oct
+        uses: houseabsolute/actions-rust-cross@v1
+        with:
+          command: build
+          toolchain: 1.93.1
+          target: ${{ matrix.target }}
+          args: "--locked --release -p oct-cli --bin oct"
+
+      - name: Package artifact
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          name="oct-${version}-${TARGET}"
+          mkdir -p "dist/${name}"
+          cp "target/${TARGET}/release/oct" "dist/${name}/oct"
+          cp README.md "dist/${name}/README.md"
+          tar -C dist -czf "dist/${name}.tar.gz" "${name}"
+          rm -rf "dist/${name}"
+          (cd dist && shasum -a 256 "${name}.tar.gz" > "${name}.tar.gz.sha256")
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: oct-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: draft release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Aggregate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum *.tar.gz > SHA256SUMS
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          body: |
+            Unsigned binaries built from `${{ github.ref_name }}` at commit `${{ github.sha }}`.
+
+            Supported artifacts: Linux x86_64/aarch64 and macOS x86_64/aarch64.
+
+            **No code signing, notarization, or reproducible-build attestation is
+            provided.** Verify the SHA-256 checksums before running an artifact.
+            These binaries are not independently audited. E2EE/pairing are
+            implemented, but public deployment still requires the security
+            review, fuzzing, and TLS hardening gates.
+          files: |
+            dist/*.tar.gz
+            dist/*.sha256
+            dist/SHA256SUMS

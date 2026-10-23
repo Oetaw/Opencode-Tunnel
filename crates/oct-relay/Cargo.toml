@@ -1,0 +1,20 @@
+[package]
+name = "oct-relay"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+oct-protocol = { path = "../oct-protocol" }
+axum.workspace = true
+bytes.workspace = true
+futures-util.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tokio-tungstenite.workspace = true
+tokio-test.workspace = true

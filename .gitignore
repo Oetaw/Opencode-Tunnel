@@ -1,0 +1,45 @@
+# Rust build output
+/target/
+**/*.rs.bk
+*.pdb
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.secret
+*.secrets
+*.token
+*.key
+*.pem
+*.p12
+*.pfx
+deploy/relay/.env
+deploy/host/*.env
+
+# Local state and databases (never commit OpenCode or OCT state)
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+deploy/relay/data/
+deploy/relay/caddy_data/
+deploy/relay/caddy_config/
+
+# Runtime files
+*.log
+*.pid
+*.sock
+
+# Editor and OS noise
+.DS_Store
+.idea/
+.vscode/
+
+# Internal planning/audit material (not part of the public package)
+.internal/
+
+# Python bytecode
+__pycache__/
+*.pyc

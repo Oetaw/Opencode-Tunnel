@@ -1,0 +1,23 @@
+name: Fuzz smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@nightly
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+      - name: Fuzz wire decoders
+        run: cargo +nightly fuzz run wire -- -runs=20000
+      - name: Fuzz security parsers
+        run: cargo +nightly fuzz run security -- -runs=20000

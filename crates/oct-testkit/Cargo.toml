@@ -1,0 +1,26 @@
+[package]
+name = "oct-testkit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+oct-protocol = { path = "../oct-protocol" }
+axum.workspace = true
+base64.workspace = true
+bytes.workspace = true
+futures-util.workspace = true
+hex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+futures-util = { workspace = true, features = ["sink"] }
+reqwest.workspace = true
+tokio-test.workspace = true
+tokio-tungstenite.workspace = true

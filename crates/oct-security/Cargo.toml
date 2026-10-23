@@ -1,0 +1,32 @@
+[package]
+name = "oct-security"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+oct-protocol = { path = "../oct-protocol" }
+async-trait.workspace = true
+base64.workspace = true
+blake2.workspace = true
+bytes.workspace = true
+chacha20poly1305.workspace = true
+fs2.workspace = true
+hex.workspace = true
+keyring.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+snow.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+x25519-dalek.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+keyring-core = "1.0"
+proptest.workspace = true
+tempfile.workspace = true

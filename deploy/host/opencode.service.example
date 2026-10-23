@@ -1,0 +1,43 @@
+[Unit]
+Description=OpenCode V2 server (loopback only)
+Documentation=https://github.com/anomalyco/opencode
+After=network.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+
+# Example only: adjust the binary path, version, port, and flags for the pinned
+# OpenCode V2 build. Binding to 127.0.0.1 is mandatory; do not change it to
+# 0.0.0.0 or a public interface. OCT reaches this service only through the
+# loopback host agent.
+ExecStart=%h/.opencode/bin/opencode serve --hostname 127.0.0.1 --port 4096
+
+# If this OpenCode build uses a server password, put it in this 0600 file
+# (for example OPENCODE_SERVER_PASSWORD=...). Never pass secrets on the command
+# line. Verify the exact variable name against the pinned upstream version.
+EnvironmentFile=-%h/.config/opencode/server.env
+
+# Independent lifecycle from oct-host.service: OpenCode restarts must not take
+# the tunnel agent down, and vice versa. Use a dedicated account in production.
+Restart=on-failure
+RestartSec=3s
+TimeoutStopSec=20s
+SyslogIdentifier=opencode
+
+# Moderate hardening. ProtectSystem=full keeps /usr, /boot and /etc read-only
+# while leaving the user's home and project paths writable.
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectControlGroups=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=default.target

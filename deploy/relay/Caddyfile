@@ -1,0 +1,21 @@
+{
+	email {$OCT_ACME_EMAIL}
+}
+
+{$OCT_DOMAIN} {
+	encode zstd gzip
+
+	@oct path /oct/v1 /healthz
+	reverse_proxy @oct relay:8080
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

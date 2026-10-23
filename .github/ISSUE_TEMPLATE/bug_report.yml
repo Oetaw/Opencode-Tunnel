@@ -1,0 +1,29 @@
+name: Bug report
+description: Report a reproducible problem
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Include expected vs actual behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Commands, logs (redacted), versions, OS.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: OCT version/commit
+  - type: checkboxes
+    id: secrets
+    attributes:
+      label: Secret handling
+      options:
+        - label: I removed credentials, invite URIs, tokens and payloads from this report.
+          required: true

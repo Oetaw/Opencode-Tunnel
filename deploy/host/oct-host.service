@@ -1,0 +1,56 @@
+[Unit]
+Description=OCT remote host agent (outbound WSS connector)
+Documentation=https://github.com/anomalyco/oct
+Wants=network-online.target
+After=network-online.target opencode.service
+
+# The OpenCode service is intentionally independent: do not use Requires= or
+# BindsTo= here. The host agent must survive OpenCode restarts and reconnect.
+# The example below uses E2EE and a persistent state directory. OCT_ROOM and
+# OCT_TOKEN are read from the environment file; never put them on ExecStart=.
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+
+# PROPOSED COMMAND. `oct host` exists, but install this unit only after the
+# Keep OpenCode on loopback. The relay is reached over public WSS; E2EE is
+# enabled by default and must not be disabled for a public relay.
+ExecStart=%h/.local/bin/oct host --e2ee --state-dir %h/.config/oct/host --upstream http://127.0.0.1:4096 --relay wss://relay.example/oct/v1
+
+# Secrets only (for example OPENCODE_SERVER_PASSWORD). The file must be mode
+# 0600 and its directory 0700. Never put secrets on ExecStart= or in the unit.
+EnvironmentFile=-%h/.config/oct/host.env
+Environment=RUST_LOG=info
+
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=20s
+KillSignal=SIGTERM
+SyslogIdentifier=oct-host
+
+# Restrictive service sandbox. ReadWritePaths= makes the OCT XDG directories
+# writable despite ProtectSystem=strict; create them before starting the unit.
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectControlGroups=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=-%h/.config/oct -%h/.local/share/oct -%h/.local/state/oct
+StateDirectory=oct
+StateDirectoryMode=0700
+
+[Install]
+WantedBy=default.target

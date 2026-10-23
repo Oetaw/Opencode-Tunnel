@@ -1,0 +1,87 @@
+name: oct-relay-public
+
+# Public TLS/WSS reference. The relay is not published directly; Caddy is the
+# only service with host ports. Both endpoints still use Noise E2EE, so the
+# relay sees ciphertext only. Replace the domain/email in .env and review the
+# Caddyfile before use. Per-IP edge rate limiting and monitoring belong in the
+# ingress/firewall layer; the relay also enforces a global connection bucket,
+# room limits, and frame-size bounds.
+
+services:
+  relay:
+    build:
+      context: ../..
+      dockerfile: deploy/relay/Dockerfile
+    image: oct-relay:public
+    restart: unless-stopped
+    init: true
+    read_only: true
+    networks:
+      - internal
+    command:
+      - relay
+      - --listen
+      - 0.0.0.0:8080
+      - --allow-public
+      - --public-url
+      - wss://${OCT_DOMAIN}/oct/v1
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 4096
+    stop_grace_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256M
+          pids: 128
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2.9-alpine
+    restart: unless-stopped
+    depends_on:
+      relay:
+        condition: service_healthy
+    networks:
+      - internal
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      OCT_DOMAIN: ${OCT_DOMAIN:?set OCT_DOMAIN}
+      OCT_ACME_EMAIL: ${OCT_ACME_EMAIL:?set OCT_ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:

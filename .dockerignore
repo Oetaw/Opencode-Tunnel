@@ -1,0 +1,14 @@
+# Keep the build context small and exclude local secrets/state.
+target/
+.git/
+.github/
+**/*.db
+**/*.db-shm
+**/*.db-wal
+**/*.sqlite
+**/*.log
+.env
+.env.*
+deploy/relay/data/
+deploy/relay/caddy_data/
+deploy/relay/caddy_config/

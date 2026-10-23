@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: oct-relay
+  namespace: oct
+  labels:
+    app.kubernetes.io/name: oct
+    app.kubernetes.io/component: relay
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: oct
+    app.kubernetes.io/component: relay
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP

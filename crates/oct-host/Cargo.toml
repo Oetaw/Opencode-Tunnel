@@ -1,0 +1,30 @@
+[package]
+name = "oct-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+oct-protocol = { path = "../oct-protocol" }
+oct-security = { path = "../oct-security" }
+oct-transport = { path = "../oct-transport" }
+async-trait.workspace = true
+base64.workspace = true
+bytes.workspace = true
+futures-util.workspace = true
+http.workspace = true
+http-body-util.workspace = true
+rand.workspace = true
+reqwest.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+oct-testkit = { path = "../oct-testkit" }
+tokio-test.workspace = true

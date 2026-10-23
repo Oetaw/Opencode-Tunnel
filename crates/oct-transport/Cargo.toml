@@ -1,0 +1,22 @@
+[package]
+name = "oct-transport"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+oct-protocol = { path = "../oct-protocol" }
+oct-security = { path = "../oct-security" }
+async-trait.workspace = true
+bytes.workspace = true
+futures-util.workspace = true
+rand.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+tokio-test.workspace = true

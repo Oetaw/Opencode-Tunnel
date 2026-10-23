@@ -1,0 +1,29 @@
+[package]
+name = "oct-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "oct"
+path = "src/main.rs"
+
+[dependencies]
+oct-client = { path = "../oct-client" }
+oct-host = { path = "../oct-host" }
+oct-protocol = { path = "../oct-protocol" }
+oct-relay = { path = "../oct-relay" }
+oct-security = { path = "../oct-security" }
+oct-transport = { path = "../oct-transport" }
+anyhow.workspace = true
+bytes.workspace = true
+clap.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+toml.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+url.workspace = true

@@ -1,0 +1,28 @@
+[workspace]
+
+[package]
+name = "oct-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+bytes = "1"
+oct-protocol = { path = "../crates/oct-protocol" }
+oct-security = { path = "../crates/oct-security" }
+
+[[bin]]
+name = "wire"
+path = "fuzz_targets/wire.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "security"
+path = "fuzz_targets/security.rs"
+test = false
+doc = false
