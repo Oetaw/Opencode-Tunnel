@@ -135,6 +135,7 @@ def main() -> int:
             "XDG_STATE_HOME": os.path.join(base, "state"),
             "OCT_ROOM": ROOM,
             "OCT_TOKEN": TOKEN,
+            "OCT_RELAY_ADMISSION_TOKEN": TOKEN,
             "OPENCODE_PASSWORD": PASSWORD,
             "TERM": "xterm-256color",
         }
