@@ -3,18 +3,22 @@ name = "oct-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "End-to-end encrypted tunnel CLI for OpenCode"
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
 
 [[bin]]
 name = "oct"
 path = "src/main.rs"
 
 [dependencies]
-oct-client = { path = "../oct-client" }
-oct-host = { path = "../oct-host" }
-oct-protocol = { path = "../oct-protocol" }
-oct-relay = { path = "../oct-relay" }
-oct-security = { path = "../oct-security" }
-oct-transport = { path = "../oct-transport" }
+oct-client = { path = "../oct-client", version = "0.1.0" }
+oct-host = { path = "../oct-host", version = "0.1.0" }
+oct-protocol = { path = "../oct-protocol", version = "0.1.0" }
+oct-relay = { path = "../oct-relay", version = "0.1.0" }
+oct-security = { path = "../oct-security", version = "0.1.0" }
+oct-transport = { path = "../oct-transport", version = "0.1.0" }
 anyhow.workspace = true
 bytes.workspace = true
 clap.workspace = true

@@ -3,10 +3,14 @@ name = "oct-transport"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "WebSocket transport, Noise framing and stream multiplexing for OCT"
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
 
 [dependencies]
-oct-protocol = { path = "../oct-protocol" }
-oct-security = { path = "../oct-security" }
+oct-protocol = { path = "../oct-protocol", version = "0.1.0" }
+oct-security = { path = "../oct-security", version = "0.1.0" }
 async-trait.workspace = true
 bytes.workspace = true
 futures-util.workspace = true

@@ -1,11 +1,16 @@
 [package]
+publish = false
 name = "oct-testkit"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Deterministic OpenCode backend fixtures for OCT tests"
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
 
 [dependencies]
-oct-protocol = { path = "../oct-protocol" }
+oct-protocol = { path = "../oct-protocol", version = "0.1.0" }
 axum.workspace = true
 base64.workspace = true
 bytes.workspace = true

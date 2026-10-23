@@ -3,11 +3,15 @@ name = "oct-host"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "OCT host agent and fixed-origin OpenCode proxy"
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
 
 [dependencies]
-oct-protocol = { path = "../oct-protocol" }
-oct-security = { path = "../oct-security" }
-oct-transport = { path = "../oct-transport" }
+oct-protocol = { path = "../oct-protocol", version = "0.1.0" }
+oct-security = { path = "../oct-security", version = "0.1.0" }
+oct-transport = { path = "../oct-transport", version = "0.1.0" }
 async-trait.workspace = true
 base64.workspace = true
 bytes.workspace = true
@@ -26,5 +30,5 @@ url.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
-oct-testkit = { path = "../oct-testkit" }
+oct-testkit = { path = "../oct-testkit", version = "0.1.0" }
 tokio-test.workspace = true

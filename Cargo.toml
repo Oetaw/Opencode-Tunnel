@@ -18,6 +18,11 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 rust-version = "1.93"
 repository = "https://github.com/anomalyco/oct"
+homepage = "https://github.com/anomalyco/oct"
+documentation = "https://github.com/anomalyco/oct#readme"
+description = "End-to-end encrypted tunnel for OpenCode"
+keywords = ["opencode", "tunnel", "e2ee", "remote-access"]
+categories = ["network-programming", "development-tools"]
 
 [workspace.dependencies]
 anyhow = "1.0"

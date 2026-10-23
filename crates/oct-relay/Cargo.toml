@@ -3,9 +3,13 @@ name = "oct-relay"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Opaque outbound-only relay for OCT"
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
 
 [dependencies]
-oct-protocol = { path = "../oct-protocol" }
+oct-protocol = { path = "../oct-protocol", version = "0.1.0" }
 axum.workspace = true
 bytes.workspace = true
 futures-util.workspace = true

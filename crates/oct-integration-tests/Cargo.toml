@@ -3,16 +3,20 @@ name = "oct-integration-tests"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "End-to-end and real-OpenCode tests for OCT"
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
 publish = false
 
 [dependencies]
-oct-client = { path = "../oct-client" }
-oct-host = { path = "../oct-host" }
-oct-protocol = { path = "../oct-protocol" }
-oct-relay = { path = "../oct-relay" }
-oct-security = { path = "../oct-security" }
-oct-testkit = { path = "../oct-testkit" }
-oct-transport = { path = "../oct-transport" }
+oct-client = { path = "../oct-client", version = "0.1.0" }
+oct-host = { path = "../oct-host", version = "0.1.0" }
+oct-protocol = { path = "../oct-protocol", version = "0.1.0" }
+oct-relay = { path = "../oct-relay", version = "0.1.0" }
+oct-security = { path = "../oct-security", version = "0.1.0" }
+oct-testkit = { path = "../oct-testkit", version = "0.1.0" }
+oct-transport = { path = "../oct-transport", version = "0.1.0" }
 bytes.workspace = true
 futures-util.workspace = true
 reqwest.workspace = true

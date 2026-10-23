@@ -3,6 +3,10 @@ name = "oct-protocol"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Bounded OCT/1 wire protocol types and codecs"
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 bytes.workspace = true
