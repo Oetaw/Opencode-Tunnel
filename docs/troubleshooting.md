@@ -9,8 +9,13 @@
 ## Client shows `HOST_OFFLINE` / 503
 
 - Host service is not connected to the relay.
-- Relay URL, room or token differs between host and client.
+- Relay and host admission tokens differ (`OCT_RELAY_ADMISSION_TOKEN` vs
+  `OCT_TOKEN`), or the room changed.
+- The client is using an old invite/session token after the host rotated the
+  room or admission secret; re-pair it.
 - Host is in E2EE mode but the client has no paired state, or vice versa.
+- Relay control protocol mismatch: upgrade relay and host together; protocol 1
+  clients cannot join a protocol 2 relay.
 - Check `systemctl --user status oct-host` and relay metrics.
 
 ## Pairing fails

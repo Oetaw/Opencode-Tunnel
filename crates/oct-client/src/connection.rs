@@ -65,6 +65,7 @@ pub(crate) async fn run_connection_loop(
             room: room.clone(),
             role: RelayRole::Client,
             token: token.clone(),
+            client_token: None,
             client_version: Some(env!("CARGO_PKG_VERSION").to_owned()),
         };
         if oct_transport::register(&conn, hello, RELAY_READY_TIMEOUT)

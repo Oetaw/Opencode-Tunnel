@@ -3,7 +3,6 @@ use std::time::Duration;
 use futures_util::{SinkExt, StreamExt};
 use oct_client::{ClientConfig, TunnelClient};
 use oct_host::{HostAgent, HostConfig};
-use oct_protocol::relay::generate_room_credentials;
 use oct_relay::{Relay, RelayConfig};
 use oct_testkit::spawn_fake_backend;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
@@ -11,6 +10,8 @@ use tokio_tungstenite::tungstenite::http::header::{AUTHORIZATION, HOST, ORIGIN};
 use tokio_tungstenite::tungstenite::http::{HeaderValue, Request};
 use tokio_tungstenite::tungstenite::{Error as WsError, Message};
 use tokio_util::sync::CancellationToken;
+
+mod support;
 
 const TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -33,6 +34,7 @@ impl Harness {
         let backend = spawn_fake_backend().await;
         let relay = Relay::bind(RelayConfig {
             listen: "127.0.0.1:0".parse().unwrap(),
+            admission_token: Some(support::ADMISSION.into()),
             ..RelayConfig::default()
         })
         .await
@@ -45,7 +47,7 @@ impl Harness {
             let _ = relay.serve(relay_task_shutdown).await;
         });
 
-        let (room, token) = generate_room_credentials();
+        let (room, token) = support::plaintext_credentials();
         let host_shutdown = CancellationToken::new();
         let host = HostAgent::new(HostConfig {
             relay_url: relay_url.clone(),

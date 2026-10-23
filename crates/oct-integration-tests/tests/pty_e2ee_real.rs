@@ -6,7 +6,6 @@ use base64::Engine as _;
 use futures_util::{SinkExt, StreamExt};
 use oct_client::{ClientConfig, TunnelClient};
 use oct_host::{HostAgent, HostConfig};
-use oct_protocol::relay::generate_room_credentials;
 use oct_relay::{Relay, RelayConfig};
 use oct_security::{ClientSecurity, HostSecurity, Identity, Invite};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
@@ -14,6 +13,8 @@ use tokio_tungstenite::tungstenite::http::header::AUTHORIZATION;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_util::sync::CancellationToken;
+
+mod support;
 
 const TIMEOUT: Duration = Duration::from_secs(8);
 
@@ -35,6 +36,7 @@ async fn real_opencode_pty_websocket_through_e2ee_tunnel() {
 
     let relay = Relay::bind(RelayConfig {
         listen: "127.0.0.1:0".parse().unwrap(),
+        admission_token: Some(support::ADMISSION.into()),
         ..RelayConfig::default()
     })
     .await
@@ -48,11 +50,11 @@ async fn real_opencode_pty_websocket_through_e2ee_tunnel() {
 
     let state = tempfile::tempdir().unwrap();
     let host_security = Arc::new(HostSecurity::load_or_create(state.path()).unwrap());
-    let (room, token) = generate_room_credentials();
+    let (room, host_token, client_token) = support::e2ee_credentials();
     let invite = Invite::new(
         relay_url.clone(),
         room.clone(),
-        token.clone(),
+        client_token.clone(),
         host_security.identity.public_key(),
         300,
         Some("pty-e2ee".into()),
@@ -63,7 +65,7 @@ async fn real_opencode_pty_websocket_through_e2ee_tunnel() {
     let host = HostAgent::new(HostConfig {
         relay_url: relay_url.clone(),
         room: room.clone(),
-        token: token.clone(),
+        token: host_token,
         upstream_url: upstream.clone(),
         backend_password: Some(password.clone()),
         ping_interval: Duration::from_secs(20),
@@ -85,7 +87,7 @@ async fn real_opencode_pty_websocket_through_e2ee_tunnel() {
     let client = TunnelClient::new(ClientConfig {
         relay_url,
         room,
-        token,
+        token: client_token,
         gateway_bind: "127.0.0.1:0".parse().unwrap(),
         connect_timeout: Duration::from_secs(2),
         security: Some(Arc::clone(&client_security)),

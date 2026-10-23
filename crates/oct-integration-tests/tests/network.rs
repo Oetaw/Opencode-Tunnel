@@ -2,16 +2,18 @@ use std::time::Duration;
 
 use oct_client::{ClientConfig, TunnelClient};
 use oct_host::{HostAgent, HostConfig};
-use oct_protocol::relay::generate_room_credentials;
 use oct_relay::{Relay, RelayConfig};
 use oct_testkit::spawn_fake_backend;
 use tokio_util::sync::CancellationToken;
+
+mod support;
 
 async fn bind_relay(addr: std::net::SocketAddr) -> Relay {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
     loop {
         match Relay::bind(RelayConfig {
             listen: addr,
+            admission_token: Some(support::ADMISSION.into()),
             ..RelayConfig::default()
         })
         .await
@@ -38,7 +40,7 @@ async fn reconnects_after_relay_restart() {
         let _ = relay.serve(relay_task_shutdown).await;
     });
 
-    let (room, token) = generate_room_credentials();
+    let (room, token) = support::plaintext_credentials();
     let host_shutdown = CancellationToken::new();
     let host = HostAgent::new(HostConfig {
         relay_url: relay_url.clone(),

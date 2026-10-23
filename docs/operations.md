@@ -50,8 +50,10 @@ metadata even though payloads remain redacted.
 
 ## Secrets
 
-- Store `OCT_ROOM`, `OCT_TOKEN` and `OPENCODE_PASSWORD` in 0600 environment
-  files or an external secret manager.
+- Store `OCT_ROOM`, `OCT_TOKEN`/`OCT_RELAY_ADMISSION_TOKEN` and
+  `OPENCODE_PASSWORD` in 0600 environment files or an external secret manager.
+- `OCT_TOKEN` is the host admission secret and must match the relay's
+  `OCT_RELAY_ADMISSION_TOKEN`. Never send it to a client.
 - Prefer `--use-keyring` for host/client identities on workstations.
 - Back up host identity securely; losing it requires re-pairing all clients.
 - Never copy `opencode.db`, `auth.json` or provider credentials between hosts.
@@ -67,12 +69,16 @@ metadata even though payloads remain redacted.
 ## Incident response
 
 - Lost client: `oct revoke <id> --state-dir <host-state> --terminate-active`.
-- Revoked client: revocation removes device authorization, but the client may
-  still know the relay room token. It cannot decrypt traffic; it can attempt
-  relay-level denial of service. Rotate `OCT_ROOM`/`OCT_TOKEN` and restart the
-  host and remaining clients after revoking an untrusted device.
-- Leaked invite: let it expire; invites are single-use and short-lived.
+- Revoked client: revocation removes device authorization, but the client still
+  knows its room-scoped token. It cannot decrypt traffic or claim the host
+  role; the host evicts it after a rejected handshake. For a clean cut, rotate
+  `OCT_ROOM` and `OCT_TOKEN`/`OCT_RELAY_ADMISSION_TOKEN`, restart the relay and
+  host, and re-pair remaining clients.
+- Leaked invite: let it expire; invites are single-use and short-lived. If it
+  was used to enroll an unknown device, revoke that device.
 - Leaked host key: stop the host, replace its identity, re-pair all clients.
-- Leaked relay token: change the room/token, restart host and clients.
-- Suspicious relay: treat it as untrusted; rotate room/token and use a trusted
+- Leaked admission token: rotate `OCT_TOKEN` and
+  `OCT_RELAY_ADMISSION_TOKEN` together, change `OCT_ROOM`, restart relay and
+  host, and re-pair clients.
+- Suspicious relay: treat it as untrusted; rotate credentials and use a trusted
   relay. Endpoint E2EE remains the confidentiality boundary.

@@ -7,7 +7,15 @@ the cluster, next to OpenCode and the local TUI.
 2. Replace `relay.example.com` in `deployment.yaml` and `ingress.yaml`.
 3. Create the TLS secret `oct-relay-tls` (cert-manager, sealed-secrets or your
    ingress controller's certificate mechanism).
-4. Apply with Kustomize:
+4. Create the host-admission secret. Use the same value as `OCT_TOKEN` on every
+   host; never give it to clients:
+
+   ```sh
+   kubectl -n oct create secret generic oct-relay-admission \
+     --from-literal=token="$(openssl rand -hex 32)"
+   ```
+
+5. Apply with Kustomize:
 
 ```sh
 kubectl apply -k deploy/kubernetes
@@ -21,6 +29,9 @@ Notes:
 - `--allow-public` is required because the relay binds `0.0.0.0` inside the
   cluster, but the container port is never exposed outside the cluster except
   through the Ingress.
+- Room creation and the host role require `OCT_RELAY_ADMISSION_TOKEN`; the
+  deployment reads it from the `oct-relay-admission` secret. Clients receive
+  only a room-scoped token inside an invite.
 - Endpoint E2EE remains mandatory. The relay still sees only ciphertext.
 - The relay keeps rooms in memory. This base intentionally runs one active
   replica; do not raise `replicas` until a distributed room/affinity layer

@@ -3,17 +3,19 @@ use std::time::Duration;
 
 use oct_client::{ClientConfig, TunnelClient};
 use oct_host::{HostAgent, HostConfig};
-use oct_protocol::relay::generate_room_credentials;
 use oct_relay::{Relay, RelayConfig};
 use oct_security::{ClientSecurity, HostSecurity, Identity, Invite};
 use oct_testkit::spawn_fake_backend;
 use tokio_util::sync::CancellationToken;
+
+mod support;
 
 #[tokio::test]
 async fn invite_enrollment_encrypts_the_tunnel_and_revocation_closes_it() {
     let backend = spawn_fake_backend().await;
     let relay = Relay::bind(RelayConfig {
         listen: "127.0.0.1:0".parse().unwrap(),
+        admission_token: Some(support::ADMISSION.into()),
         ..RelayConfig::default()
     })
     .await
@@ -27,11 +29,11 @@ async fn invite_enrollment_encrypts_the_tunnel_and_revocation_closes_it() {
 
     let state = tempfile::tempdir().unwrap();
     let host_security = Arc::new(HostSecurity::load_or_create(state.path()).unwrap());
-    let (room, token) = generate_room_credentials();
+    let (room, host_token, client_token) = support::e2ee_credentials();
     let invite = Invite::new(
         relay_url.clone(),
         room.clone(),
-        token.clone(),
+        client_token.clone(),
         host_security.identity.public_key(),
         300,
         Some("e2ee-test".into()),
@@ -43,7 +45,7 @@ async fn invite_enrollment_encrypts_the_tunnel_and_revocation_closes_it() {
     let host = HostAgent::new(HostConfig {
         relay_url: relay_url.clone(),
         room: room.clone(),
-        token: token.clone(),
+        token: host_token.clone(),
         upstream_url: backend.base_url.clone(),
         backend_password: None,
         ping_interval: Duration::from_secs(20),
@@ -51,8 +53,8 @@ async fn invite_enrollment_encrypts_the_tunnel_and_revocation_closes_it() {
         security: Some(Arc::clone(&host_security)),
     })
     .unwrap();
-    let host_token = host_shutdown.clone();
-    let host_task = tokio::spawn(async move { host.run(host_token).await });
+    let host_stop = host_shutdown.clone();
+    let host_task = tokio::spawn(async move { host.run(host_stop).await });
 
     let client_security = Arc::new(ClientSecurity::new(
         Identity::generate(),
@@ -63,7 +65,7 @@ async fn invite_enrollment_encrypts_the_tunnel_and_revocation_closes_it() {
     let client = TunnelClient::new(ClientConfig {
         relay_url,
         room,
-        token,
+        token: client_token,
         gateway_bind: "127.0.0.1:0".parse().unwrap(),
         connect_timeout: Duration::from_secs(2),
         security: Some(Arc::clone(&client_security)),
@@ -147,6 +149,7 @@ async fn unpaired_client_cannot_open_the_tunnel() {
     let backend = spawn_fake_backend().await;
     let relay = Relay::bind(RelayConfig {
         listen: "127.0.0.1:0".parse().unwrap(),
+        admission_token: Some(support::ADMISSION.into()),
         ..RelayConfig::default()
     })
     .await
@@ -160,12 +163,12 @@ async fn unpaired_client_cannot_open_the_tunnel() {
 
     let state = tempfile::tempdir().unwrap();
     let host_security = Arc::new(HostSecurity::load_or_create(state.path()).unwrap());
-    let (room, token) = generate_room_credentials();
+    let (room, host_token, client_token) = support::e2ee_credentials();
     let host_shutdown = CancellationToken::new();
     let host = HostAgent::new(HostConfig {
         relay_url: relay_url.clone(),
         room: room.clone(),
-        token: token.clone(),
+        token: host_token.clone(),
         upstream_url: backend.base_url.clone(),
         backend_password: None,
         ping_interval: Duration::from_secs(20),
@@ -173,8 +176,8 @@ async fn unpaired_client_cannot_open_the_tunnel() {
         security: Some(Arc::clone(&host_security)),
     })
     .unwrap();
-    let host_token = host_shutdown.clone();
-    tokio::spawn(async move { host.run(host_token).await });
+    let host_stop = host_shutdown.clone();
+    tokio::spawn(async move { host.run(host_stop).await });
 
     let client_security = Arc::new(ClientSecurity::new(
         Identity::generate(),
@@ -185,7 +188,7 @@ async fn unpaired_client_cannot_open_the_tunnel() {
     let client = TunnelClient::new(ClientConfig {
         relay_url,
         room,
-        token,
+        token: client_token,
         gateway_bind: "127.0.0.1:0".parse().unwrap(),
         connect_timeout: Duration::from_secs(2),
         security: Some(client_security),

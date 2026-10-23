@@ -5,13 +5,14 @@ use base64::Engine as _;
 use futures_util::{SinkExt, StreamExt};
 use oct_client::{ClientConfig, TunnelClient};
 use oct_host::{HostAgent, HostConfig};
-use oct_protocol::relay::generate_room_credentials;
 use oct_relay::{Relay, RelayConfig};
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::header::AUTHORIZATION;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_util::sync::CancellationToken;
+
+mod support;
 
 const TIMEOUT: Duration = Duration::from_secs(8);
 
@@ -36,6 +37,7 @@ async fn real_opencode_pty_websocket_through_tunnel() {
 
     let relay = Relay::bind(RelayConfig {
         listen: "127.0.0.1:0".parse().unwrap(),
+        admission_token: Some(support::ADMISSION.into()),
         ..RelayConfig::default()
     })
     .await
@@ -47,7 +49,7 @@ async fn real_opencode_pty_websocket_through_tunnel() {
         let _ = relay.serve(relay_task_shutdown).await;
     });
 
-    let (room, token) = generate_room_credentials();
+    let (room, token) = support::plaintext_credentials();
     let host_shutdown = CancellationToken::new();
     let host = HostAgent::new(HostConfig {
         relay_url: relay_url.clone(),

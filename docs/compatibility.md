@@ -25,3 +25,6 @@ machines.
 - Relay: WSS on 443 through a TLS terminator.
 - Host/client: outbound WSS only; no inbound public ports.
 - Local gateway/OpenCode: loopback only.
+- Relay control protocol 2 is required. Protocol 1 clients are rejected; there
+  is no downgrade. Upgrade the relay and host together and re-pair clients that
+  still hold protocol-1 shared-token state.

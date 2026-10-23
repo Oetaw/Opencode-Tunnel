@@ -29,22 +29,26 @@ fallback.
 
 ## First enrollment
 
-1. Start the relay and the host with `--e2ee`, using the same room/token that
-   the invite will contain.
+1. Start the relay with an admission token and the host with the same value in
+   `OCT_TOKEN`; E2EE is the default. Clients never receive this token.
 
 ```sh
-OCT_TOKEN=<token> cargo run -p oct-cli -- host --e2ee \
+OCT_RELAY_ADMISSION_TOKEN=<host-admission-token> \
+  cargo run -p oct-cli -- relay --listen 127.0.0.1:8080
+
+OCT_TOKEN=<host-admission-token> cargo run -p oct-cli -- host \
   --state-dir ~/.config/oct/host \
   --relay wss://relay.example/oct/v1 \
   --room <room> --upstream http://127.0.0.1:4096
 ```
 
-2. Create a one-time invitation. It prints the host fingerprint and a pairing
-   URI. The URI contains the invite secret, relay URL, room, token, host public
-   key, and expiry.
+2. Create a one-time invitation. The host derives a room-scoped client token
+   from its admission token and puts only that derived token in the invite. The
+   URI also contains the invite secret, relay URL, room, host public key, and
+   expiry.
 
 ```sh
-OCT_TOKEN=<token> cargo run -p oct-cli -- invite \
+OCT_TOKEN=<host-admission-token> cargo run -p oct-cli -- invite \
   --state-dir ~/.config/oct/host \
   --relay wss://relay.example/oct/v1 \
   --room <room> --ttl-secs 300
@@ -65,7 +69,9 @@ cargo run -p oct-cli -- pair 'octpair1:...' \
 ```
 
 The host consumes the invite atomically and adds the client static key to its
-allowlist. Reusing the invite fails even if the client retries.
+allowlist. Reusing the invite fails even if the client retries. The paired
+client state stores the room-scoped client token; the client does not need
+`OCT_TOKEN` or `OCT_ROOM` after pairing.
 
 4. Run the TUI with E2EE. The client loads its pinned host key and identity; no
    invite is sent after successful enrollment.

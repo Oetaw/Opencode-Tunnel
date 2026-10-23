@@ -14,6 +14,7 @@ pub mod invite;
 pub mod keystore;
 pub mod noise;
 pub mod prelude;
+pub mod tokens;
 
 pub use authorizer::{ClientSecurity, HostSecurity};
 pub use devices::{Device, DeviceRole, DeviceStore};
@@ -23,3 +24,4 @@ pub use invite::{Invite, InviteStore, DEFAULT_TTL_SECS as DEFAULT_INVITE_TTL};
 pub use keystore::Keystore;
 pub use noise::{client_handshake, host_handshake, NoiseHandshake, NoiseIo, NoiseSession};
 pub use prelude::{ClientPrelude, HostPrelude};
+pub use tokens::derive_client_token;

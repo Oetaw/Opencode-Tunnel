@@ -3,8 +3,9 @@ use std::time::Duration;
 use futures_util::StreamExt;
 use oct_client::{ClientConfig, TunnelClient};
 use oct_host::{HostAgent, HostConfig};
-use oct_protocol::relay::generate_room_credentials;
 use oct_relay::{Relay, RelayConfig};
+
+mod support;
 use oct_testkit::spawn_fake_backend;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
@@ -25,6 +26,7 @@ impl Harness {
         let backend = spawn_fake_backend().await;
         let relay = Relay::bind(RelayConfig {
             listen: "127.0.0.1:0".parse().unwrap(),
+            admission_token: Some(support::ADMISSION.into()),
             ..RelayConfig::default()
         })
         .await
@@ -37,7 +39,7 @@ impl Harness {
             let _ = relay.serve(relay_task_shutdown).await;
         });
 
-        let (room, token) = generate_room_credentials();
+        let (room, token) = support::plaintext_credentials();
         let host_shutdown = CancellationToken::new();
         let host = HostAgent::new(HostConfig {
             relay_url: relay_url.clone(),

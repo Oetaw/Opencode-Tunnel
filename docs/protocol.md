@@ -1,5 +1,8 @@
 # OCT/1 protocol specification
 
+“OCT/1” is the inner frame protocol; the outer relay control envelope is
+currently protocol `2` (see §9).
+
 **Status:** implementation specification. This document describes the Rust
 implementation in `crates/oct-protocol` and the relay/transport
 behavior. It is not a claim of production security. The public-deployment gate
@@ -31,7 +34,7 @@ keystrokes, or mouse events.
 | Carrier | WSS or loopback ws | WSS (TLS) for non-loopback |
 | Inner frames | sent directly over binary WSS | Noise XX transport ciphertext |
 | Relay visibility | room metadata + opaque binary frames | room metadata + ciphertext |
-| Peer authentication | pre-shared room token | pinned host key + device allowlist/invite |
+| Peer authentication | shared loopback token | pinned host key + device allowlist/invite |
 | Deployment | loopback / isolated test only | public relay allowed after security gates |
 
 The legacy mode MUST NOT be deployed on a public relay. In E2EE mode there is
@@ -43,8 +46,10 @@ session MUST close the connection, and `HELLO` must negotiate `Feature::E2ee`.
 1. Host and client each open an outbound WSS connection to the relay endpoint
    (`/oct/v1` by default).
 2. Each sends a **text** JSON `RelayControl::Hello` as its first message.
-3. The relay validates protocol, room, token, and role, then sends
-   `RelayControl::Ready`.
+3. The relay validates protocol, room, role and credentials, then sends
+   `RelayControl::Ready`. Only a host presenting the relay's admission token may
+   create a room. A client token can join an existing room but cannot create a
+   room or occupy the host role.
 4. When both roles are present, the relay sends `PeerJoined { role }` to each
    endpoint. A late joiner is told about the already-present peer.
 5. In E2EE mode both endpoints perform a fresh Noise XX handshake over binary
@@ -345,16 +350,23 @@ authenticated by Noise and are never visible to the relay.
 ## 9. Relay outer envelope
 
 The relay endpoint is a WSS upgrade at `GET /oct/v1`. The first client message
-is JSON text (`RelayControl`), max 16 KiB:
+is JSON text (`RelayControl`), max 16 KiB. Relay control protocol 2 separates
+host admission from the room-scoped client credential:
 
 ```json
-{"type":"hello","protocol":1,"room":"0123456789abcdef","role":"host","token":"<64 hex chars>","client_version":"2.0.22"}
+{"type":"hello","protocol":2,"room":"0123456789abcdef","role":"host","token":"<relay admission token>","client_token":"<derived room client token>","client_version":"2.0.22"}
+```
+
+A joining client sends only its room-scoped credential:
+
+```json
+{"type":"hello","protocol":2,"room":"0123456789abcdef","role":"client","token":"<room client token>","client_version":"2.0.22"}
 ```
 
 Relay replies:
 
 ```json
-{"type":"ready","protocol":1,"room":"0123456789abcdef","role":"host"}
+{"type":"ready","protocol":2,"room":"0123456789abcdef","role":"host"}
 ```
 
 When the peer appears, both receive:
@@ -363,18 +375,35 @@ When the peer appears, both receive:
 {"type":"peer_joined","role":"client"}
 ```
 
-Other control messages: `ping`, `pong`, `peer_left`, and
-`error { code, message }`. After the handshake, every binary WebSocket message
-is forwarded verbatim to the peer. The relay MUST NOT parse inner frames.
+Other control messages: `ping`, `pong`, `peer_left`,
+`evict { role: "client" }` (host-only), and `error { code, message }`. After the
+handshake, every binary WebSocket message is forwarded verbatim to the peer.
+The relay MUST NOT parse inner frames.
 
 Room rules:
 
 * room id: 16–128 ASCII alphanumerics, `-` or `_`;
-* token: 32–256 printable ASCII; constant-time comparison;
+* host token: the relay's configured admission token; required to create a
+  room or occupy the host role;
+* client token: 32–256 printable ASCII, derived by the host and required to
+  join the room; constant-time comparison;
+* room creation is host-only; a client token cannot create a room or claim the
+  host role;
 * one host and one client per room; duplicate roles rejected;
+* a host may evict the client slot after a failed Noise/device authorization;
 * idle rooms expire; oversized binary messages are rejected;
 * on peer disconnect the relay notifies and closes the other side; endpoints
   reconnect with a fresh epoch.
+
+The host derives the client credential as
+`HMAC-SHA-256(admission_token, "oct/client-token/v2\0" || room)` and sends it in
+its `hello`. The relay pins that value to the room. The derivation is one-way:
+a client that receives the derived token cannot recover the admission token or
+derive a token for another room.
+
+The `/oct/v1` route name is retained while the relay control protocol version is
+`2`. Endpoints must reject a mismatched `protocol` value; there is no
+downgrade.
 
 ## 10. Error taxonomy
 

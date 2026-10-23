@@ -3,8 +3,9 @@
 # Multi-stage build for the OCT relay container.
 #
 # IMPORTANT: this image defaults to loopback. A public deployment must add
-# `--allow-public`, terminate TLS/WSS in front of the relay, and use E2EE on
-# both endpoints. Do not publish this port without those controls.
+# `--allow-public`, set OCT_RELAY_ADMISSION_TOKEN, terminate TLS/WSS in front
+# of the relay, and use E2EE on both endpoints. Do not publish this port
+# without those controls.
 
 ARG RUST_VERSION=1.93.1
 

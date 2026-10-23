@@ -63,6 +63,11 @@ pub async fn register(
             RelayControl::Hello { .. } => {
                 return Err(TransportError::Internal("relay echoed a hello".into()));
             }
+            RelayControl::Evict { .. } => {
+                return Err(TransportError::Internal(
+                    "relay sent an evict control before ready".into(),
+                ));
+            }
         }
     }
 }
@@ -108,6 +113,11 @@ pub async fn wait_for_peer(conn: &WsConnection, timeout: Duration) -> Result<(),
             RelayControl::Pong | RelayControl::Ready { .. } => {}
             RelayControl::Hello { .. } => {
                 return Err(TransportError::Internal("relay echoed a hello".into()));
+            }
+            RelayControl::Evict { .. } => {
+                return Err(TransportError::Internal(
+                    "relay sent an evict control to an endpoint".into(),
+                ));
             }
         }
     }

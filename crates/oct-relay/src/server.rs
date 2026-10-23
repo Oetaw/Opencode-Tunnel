@@ -76,11 +76,16 @@ impl Relay {
     pub async fn bind(config: RelayConfig) -> Result<Self, RelayError> {
         config.validate()?;
         let listener = TcpListener::bind(config.listen).await?;
+        let admission_token = config
+            .admission_token
+            .clone()
+            .expect("validated relay configuration has an admission token");
         let rooms: SharedRooms = Arc::new(Rooms::new(
             config.max_connections_per_room,
             config.max_rooms,
             config.max_queued_bytes,
             config.room_idle_timeout,
+            admission_token,
         ));
         let metrics = Arc::new(Metrics::default());
         let state = Arc::new(RelayState {
@@ -257,11 +262,19 @@ async fn handle_socket(state: Arc<RelayState>, socket: WebSocket, shutdown: Canc
         room_id,
         role,
         token,
+        client_token,
     } = hello;
 
     let join = match state
         .rooms
-        .join(&room_id, role, &token, conn_id, tx.clone())
+        .join(
+            &room_id,
+            role,
+            &token,
+            client_token.as_deref(),
+            conn_id,
+            tx.clone(),
+        )
         .await
     {
         Ok(join) => join,
@@ -328,6 +341,20 @@ async fn handle_socket(state: Arc<RelayState>, socket: WebSocket, shutdown: Canc
                     }
                     Ok(RelayControl::Pong) => {}
                     Ok(RelayControl::Error { .. }) => {}
+                    Ok(RelayControl::Evict { role: target }) => {
+                        if role != RelayRole::Host || target != RelayRole::Client {
+                            state.metrics.reject();
+                            reason = "unauthorized evict";
+                            break;
+                        }
+                        if let Some(peer) = state.rooms.evict_client(&room_id, conn_id).await {
+                            state.metrics.peer_left();
+                            let _ =
+                                send_error(&peer.tx, "EVICTED", "host closed the client session")
+                                    .await;
+                            let _ = peer.tx.send(Outbound::Close).await;
+                        }
+                    }
                     Ok(_) => {
                         state.metrics.reject();
                         reason = "unexpected control";
@@ -395,6 +422,7 @@ struct HelloFields {
     room_id: String,
     role: RelayRole,
     token: String,
+    client_token: Option<String>,
 }
 
 async fn read_hello(
@@ -417,7 +445,11 @@ async fn read_hello(
     let control = RelayControl::decode(text.as_str())?;
     control.validate_hello().map_err(RelayError::Control)?;
     let RelayControl::Hello {
-        room, role, token, ..
+        room,
+        role,
+        token,
+        client_token,
+        ..
     } = control
     else {
         return Err(RelayError::InvalidHello);
@@ -426,6 +458,7 @@ async fn read_hello(
         room_id: room,
         role,
         token,
+        client_token,
     })
 }
 

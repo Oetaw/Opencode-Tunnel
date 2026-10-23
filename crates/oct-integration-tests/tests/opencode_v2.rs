@@ -2,9 +2,10 @@ use std::time::Duration;
 
 use oct_client::{ClientConfig, TunnelClient};
 use oct_host::{HostAgent, HostConfig};
-use oct_protocol::relay::generate_room_credentials;
 use oct_relay::{Relay, RelayConfig};
 use tokio_util::sync::CancellationToken;
+
+mod support;
 
 /// Env-gated real-upstream smoke test.
 ///
@@ -21,6 +22,7 @@ async fn real_opencode_api_info_through_tunnel() {
 
     let relay = Relay::bind(RelayConfig {
         listen: "127.0.0.1:0".parse().unwrap(),
+        admission_token: Some(support::ADMISSION.into()),
         ..RelayConfig::default()
     })
     .await
@@ -32,7 +34,7 @@ async fn real_opencode_api_info_through_tunnel() {
         let _ = relay.serve(relay_task_shutdown).await;
     });
 
-    let (room, token) = generate_room_credentials();
+    let (room, token) = support::plaintext_credentials();
     let host_shutdown = CancellationToken::new();
     let host = HostAgent::new(HostConfig {
         relay_url: relay_url.clone(),

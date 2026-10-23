@@ -17,6 +17,9 @@ services:
     read_only: true
     network_mode: host
     command: ["relay", "--listen", "127.0.0.1:8080"]
+    environment:
+      # Local-only admission secret; must match the host's OCT_TOKEN.
+      OCT_RELAY_ADMISSION_TOKEN: ${OCT_RELAY_ADMISSION_TOKEN:?set OCT_RELAY_ADMISSION_TOKEN}
     cap_drop:
       - ALL
     security_opt:

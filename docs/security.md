@@ -11,9 +11,26 @@ account. Treat the client identity and invite as highly sensitive.
   encryption cannot protect the other.
 - The relay is untrusted for confidentiality and integrity. It sees IPs, room
   IDs, timing and ciphertext sizes and can drop, delay or close connections. It
-  cannot forge an authenticated frame or change identities.
+  cannot forge an authenticated frame or change identities. It also knows the
+  admission and client credentials needed for routing, so a malicious relay can
+  deny service or allow unauthorized room creation, but cannot decrypt traffic.
 - TLS protects each relay hop. Noise protects endpoint-to-endpoint traffic.
 - The host OS, key storage and OpenCode's own credentials remain in scope.
+
+## Relay credentials
+
+- `OCT_TOKEN` / `OCT_RELAY_ADMISSION_TOKEN` is a host admission secret. It is
+  required to create a room or occupy the host role. It is never sent to
+  clients.
+- `oct invite` derives a separate, room-scoped client token with HMAC-SHA-256
+  and places only that token in the invite. The relay learns it when the host
+  creates the room.
+- A client token holder cannot create rooms or claim the host role. This closes
+  unauthenticated room exhaustion and host-slot squatting.
+- A revoked client can still open the client slot with its old token, but the
+  host rejects its Noise/device authorization and sends a host-only `evict`
+  control so the slot is released. Rotating the room and admission secret
+  remains the clean response to a suspected token leak.
 
 ## Endpoint encryption
 
@@ -33,8 +50,9 @@ persistent X25519 identities.
 
 ## Pairing and revocation
 
-- Invites contain a 256-bit secret, pinned host key, relay URL, room and token,
-  and expire after five minutes by default.
+- Invites contain a 256-bit secret, pinned host key, relay URL, room and a
+  room-scoped client token, and expire after five minutes by default. They do
+  not contain the host admission token.
 - Invite consumption is atomic and one-time.
 - The host stores only device public keys and metadata; the client stores its
   private identity and the pinned host key.
@@ -58,7 +76,10 @@ The gateway started by `oct tui`:
 
 - The relay is an opaque router: it does not parse OCT application frames.
 - Public bind requires explicit `--allow-public`.
-- TLS termination is required in front of a public relay.
+- Every relay requires a host admission token; room creation is host-only.
+- Clients authenticate with a room-scoped token and can never create a room or
+  claim the host role.
+- A host can evict the client slot after a failed Noise/device authorization.
 - The relay enforces room limits, connection-rate limits, frame bounds and
   idle-room expiry.
 - It does not persist application payloads.
@@ -67,7 +88,8 @@ The gateway started by `oct tui`:
 
 Never log or commit:
 
-- `OPENCODE_PASSWORD`, relay room tokens or invite secrets;
+- `OPENCODE_PASSWORD`, `OCT_TOKEN`/`OCT_RELAY_ADMISSION_TOKEN`, room-scoped
+  client tokens or invite secrets;
 - OCT private identity keys;
 - Authorization/Cookie headers, PTY tickets or decrypted traffic;
 - OpenCode `auth.json` or `opencode.db`.

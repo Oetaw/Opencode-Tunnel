@@ -29,6 +29,9 @@ services:
       - "512"
       - --max-queued-bytes
       - "33554432"
+    environment:
+      # Host admission secret. Must match the host's OCT_TOKEN.
+      OCT_RELAY_ADMISSION_TOKEN: ${OCT_RELAY_ADMISSION_TOKEN:?set OCT_RELAY_ADMISSION_TOKEN}
     cap_drop:
       - ALL
     security_opt:

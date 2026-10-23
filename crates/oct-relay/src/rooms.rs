@@ -44,13 +44,24 @@ pub struct PeerSlot {
 
 #[derive(Debug, Default)]
 struct Room {
-    token: String,
+    /// Admission credential pinned when the room was created.
+    host_token: String,
+    /// Room-scoped client credential installed by the host. It is equal to
+    /// `host_token` only for the explicit legacy plaintext loopback mode.
+    client_token: String,
     host: Option<PeerSlot>,
     client: Option<PeerSlot>,
     idle_since: Option<Instant>,
 }
 
 impl Room {
+    fn token_for(&self, role: RelayRole) -> &str {
+        match role {
+            RelayRole::Host => &self.host_token,
+            RelayRole::Client => &self.client_token,
+        }
+    }
+
     fn slot(&self, role: RelayRole) -> Option<&PeerSlot> {
         match role {
             RelayRole::Host => self.host.as_ref(),
@@ -89,9 +100,11 @@ pub struct JoinResult {
 }
 
 /// In-memory room registry. The relay deliberately keeps only routing state:
-/// a room id, a token pinned on first use, role slots, and one idle timestamp.
+/// a room id, the host admission credential pinned on creation, a room-scoped
+/// client credential, role slots, and one idle timestamp.
 pub struct Rooms {
     inner: Mutex<HashMap<String, Room>>,
+    admission_token: String,
     pub(crate) max_connections_per_room: usize,
     pub(crate) max_rooms: usize,
     queue_budget: Arc<Semaphore>,
@@ -104,9 +117,11 @@ impl Rooms {
         max_rooms: usize,
         max_queued_bytes: usize,
         idle_timeout: Duration,
+        admission_token: String,
     ) -> Self {
         Self {
             inner: Mutex::new(HashMap::new()),
+            admission_token,
             max_connections_per_room,
             max_rooms,
             queue_budget: Arc::new(Semaphore::new(max_queued_bytes)),
@@ -116,24 +131,70 @@ impl Rooms {
 
     /// Join a room. Returns the peer role if a peer is now present and the
     /// peer's outbound sender for bidirectional forwarding.
+    ///
+    /// A room is created only by an authenticated host. Clients can never
+    /// create a room or claim the host role, even if they hold a valid client
+    /// token. The host admission credential is checked against relay
+    /// configuration; the client credential is checked against the token the
+    /// host installed when it created the room.
     pub async fn join(
         &self,
         room_id: &str,
         role: RelayRole,
         token: &str,
+        client_token: Option<&str>,
         conn_id: ConnectionId,
         tx: mpsc::Sender<Outbound>,
     ) -> Result<JoinResult, RelayError> {
         let mut rooms = self.inner.lock().await;
-        if !rooms.contains_key(room_id) && rooms.len() >= self.max_rooms {
-            return Err(RelayError::AtCapacity);
-        }
-        let room = rooms.entry(room_id.to_owned()).or_default();
 
-        if room.token.is_empty() {
-            room.token = token.to_owned();
-        } else if !token_matches(&room.token, token) {
+        if !rooms.contains_key(room_id) {
+            if role != RelayRole::Host || !token_matches(&self.admission_token, token) {
+                return Err(RelayError::InvalidToken);
+            }
+            // Omitted client credentials are the explicit legacy plaintext
+            // loopback mode. E2EE hosts always install a distinct derived
+            // client credential, so a client token can never be promoted to a
+            // host credential.
+            let client_token = match client_token {
+                Some(client_token) => {
+                    if token_matches(token, client_token) {
+                        return Err(RelayError::InvalidToken);
+                    }
+                    client_token
+                }
+                None => token,
+            };
+            if rooms.len() >= self.max_rooms {
+                return Err(RelayError::AtCapacity);
+            }
+            rooms.insert(
+                room_id.to_owned(),
+                Room {
+                    host_token: token.to_owned(),
+                    client_token: client_token.to_owned(),
+                    ..Room::default()
+                },
+            );
+        }
+
+        let room = rooms
+            .get_mut(room_id)
+            .expect("room was inserted or already existed");
+
+        if !token_matches(room.token_for(role), token) {
             return Err(RelayError::InvalidToken);
+        }
+        if role == RelayRole::Host {
+            // A room is always pinned to the relay's admitted host credential.
+            if !token_matches(&self.admission_token, token) {
+                return Err(RelayError::InvalidToken);
+            }
+            if let Some(client_token) = client_token {
+                if !token_matches(&room.client_token, client_token) {
+                    return Err(RelayError::InvalidToken);
+                }
+            }
         }
 
         if room.slot(role).is_some() {
@@ -251,6 +312,24 @@ impl Rooms {
         survivor
     }
 
+    /// Host-authorized removal of the client slot. This lets a host drop a
+    /// revoked or unauthorized client immediately instead of leaving the
+    /// client role occupied until the idle timeout.
+    pub async fn evict_client(
+        &self,
+        room_id: &str,
+        host_conn_id: ConnectionId,
+    ) -> Option<PeerSlot> {
+        let mut rooms = self.inner.lock().await;
+        let room = rooms.get_mut(room_id)?;
+        if room.host.as_ref().map(|slot| slot.conn_id) != Some(host_conn_id) {
+            return None;
+        }
+        let client = room.client.take()?;
+        room.idle_since = Some(Instant::now());
+        Some(client)
+    }
+
     /// Mark rooms whose sole peer has been waiting too long for eviction.
     /// Returns the senders to close. Paired rooms are never evicted.
     pub async fn evict_idle(&self, now: Instant) -> Vec<mpsc::Sender<Outbound>> {
@@ -300,41 +379,37 @@ pub type SharedRooms = Arc<Rooms>;
 mod tests {
     use super::*;
 
+    const ROOM: &str = "room-0000000000";
+    const ADMISSION: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const CLIENT: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+    fn rooms() -> Rooms {
+        Rooms::new(2, 4, 100_000, Duration::from_secs(60), ADMISSION.to_owned())
+    }
+
     #[tokio::test]
     async fn queued_bytes_are_bounded_and_released_after_writer_delivery() {
-        let rooms = Rooms::new(2, 4, 100_000, Duration::from_secs(60));
+        let rooms = rooms();
         let (host_tx, mut host_rx) = mpsc::channel(8);
         let (client_tx, _client_rx) = mpsc::channel(8);
         rooms
-            .join(
-                "room-0000000000",
-                RelayRole::Host,
-                &"a".repeat(64),
-                1,
-                host_tx,
-            )
+            .join(ROOM, RelayRole::Host, ADMISSION, Some(CLIENT), 1, host_tx)
             .await
             .unwrap();
         rooms
-            .join(
-                "room-0000000000",
-                RelayRole::Client,
-                &"a".repeat(64),
-                2,
-                client_tx,
-            )
+            .join(ROOM, RelayRole::Client, CLIENT, None, 2, client_tx)
             .await
             .unwrap();
 
         let payload = Bytes::from(vec![0u8; 60_000]);
         rooms
-            .send_binary("room-0000000000", RelayRole::Client, payload.clone())
+            .send_binary(ROOM, RelayRole::Client, payload.clone())
             .await
             .unwrap();
         assert!(
             tokio::time::timeout(
                 Duration::from_millis(100),
-                rooms.send_binary("room-0000000000", RelayRole::Client, payload.clone())
+                rooms.send_binary(ROOM, RelayRole::Client, payload.clone())
             )
             .await
             .is_err(),
@@ -352,11 +427,91 @@ mod tests {
         assert!(
             tokio::time::timeout(
                 Duration::from_secs(1),
-                rooms.send_binary("room-0000000000", RelayRole::Client, payload)
+                rooms.send_binary(ROOM, RelayRole::Client, payload)
             )
             .await
             .is_ok(),
             "dropping the writer frame must release its budget"
         );
+    }
+
+    #[tokio::test]
+    async fn client_cannot_create_a_room() {
+        let rooms = rooms();
+        let (tx, _rx) = mpsc::channel(1);
+        let result = rooms
+            .join(ROOM, RelayRole::Client, CLIENT, None, 1, tx)
+            .await;
+        assert!(matches!(result, Err(RelayError::InvalidToken)));
+        assert_eq!(rooms.room_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn client_token_cannot_claim_the_host_role() {
+        let rooms = rooms();
+        let (host_tx, _host_rx) = mpsc::channel(1);
+        rooms
+            .join(ROOM, RelayRole::Host, ADMISSION, Some(CLIENT), 1, host_tx)
+            .await
+            .unwrap();
+
+        let (tx, _rx) = mpsc::channel(1);
+        let result = rooms
+            .join(ROOM, RelayRole::Host, CLIENT, Some(CLIENT), 2, tx)
+            .await;
+        assert!(matches!(result, Err(RelayError::InvalidToken)));
+    }
+
+    #[tokio::test]
+    async fn wrong_admission_token_cannot_create_a_room() {
+        let rooms = rooms();
+        let (tx, _rx) = mpsc::channel(1);
+        let result = rooms
+            .join(ROOM, RelayRole::Host, &"c".repeat(64), Some(CLIENT), 1, tx)
+            .await;
+        assert!(matches!(result, Err(RelayError::InvalidToken)));
+        assert_eq!(rooms.room_count().await, 0);
+    }
+
+    #[tokio::test]
+    async fn host_can_evict_a_client_and_reuse_the_slot() {
+        let rooms = rooms();
+        let (host_tx, _host_rx) = mpsc::channel(8);
+        let (client_tx, mut client_rx) = mpsc::channel(8);
+        rooms
+            .join(ROOM, RelayRole::Host, ADMISSION, Some(CLIENT), 1, host_tx)
+            .await
+            .unwrap();
+        rooms
+            .join(ROOM, RelayRole::Client, CLIENT, None, 2, client_tx)
+            .await
+            .unwrap();
+
+        assert!(rooms.evict_client(ROOM, 999).await.is_none());
+        let evicted = rooms.evict_client(ROOM, 1).await.expect("client slot");
+        assert!(matches!(evicted.tx.send(Outbound::Close).await, Ok(())));
+        assert!(matches!(client_rx.recv().await, Some(Outbound::Close)));
+        assert_eq!(rooms.occupied_roles(ROOM).await, Some((true, false)));
+
+        let (replacement_tx, _replacement_rx) = mpsc::channel(8);
+        rooms
+            .join(ROOM, RelayRole::Client, CLIENT, None, 3, replacement_tx)
+            .await
+            .expect("client slot must be reusable after eviction");
+    }
+
+    #[tokio::test]
+    async fn legacy_shared_token_room_is_only_created_by_a_host() {
+        let rooms = rooms();
+        let (host_tx, _host_rx) = mpsc::channel(8);
+        rooms
+            .join(ROOM, RelayRole::Host, ADMISSION, None, 1, host_tx)
+            .await
+            .unwrap();
+        let (client_tx, _client_rx) = mpsc::channel(8);
+        rooms
+            .join(ROOM, RelayRole::Client, ADMISSION, None, 2, client_tx)
+            .await
+            .expect("legacy loopback room remains usable");
     }
 }

@@ -7,7 +7,9 @@ After=network-online.target opencode.service
 # The OpenCode service is intentionally independent: do not use Requires= or
 # BindsTo= here. The host agent must survive OpenCode restarts and reconnect.
 # The example below uses E2EE and a persistent state directory. OCT_ROOM and
-# OCT_TOKEN are read from the environment file; never put them on ExecStart=.
+# OCT_TOKEN (the relay admission secret) are read from the environment file;
+# never put them on ExecStart=. Clients receive a derived invite credential,
+# not OCT_TOKEN.
 StartLimitIntervalSec=300
 StartLimitBurst=10
 

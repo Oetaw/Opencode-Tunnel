@@ -10,6 +10,8 @@ pub enum SecurityError {
     InvalidPublicKey,
     #[error("invalid invite")]
     InvalidInvite,
+    #[error("invalid relay credential")]
+    InvalidCredential,
     #[error("invite has expired")]
     InviteExpired,
     #[error("invite has already been used")]

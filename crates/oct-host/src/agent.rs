@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use oct_protocol::relay::{validate_room, validate_token, RelayControl, RelayRole, RELAY_PROTOCOL};
 use oct_protocol::Role;
-use oct_security::{ClientPrelude, HostPrelude, HostSecurity, SecurityError};
+use oct_security::{derive_client_token, ClientPrelude, HostPrelude, HostSecurity, SecurityError};
 use oct_transport::{
     Backoff, Mux, MuxConfig, OpenHandler, TransportError, WsConnection, WsOptions,
 };
@@ -67,6 +67,9 @@ pub struct HostAgent {
     relay: Url,
     proxy: Arc<BackendProxy>,
     security: Option<Arc<HostSecurity>>,
+    /// Room-scoped client credential installed when this host creates the
+    /// room. `None` selects the explicit legacy plaintext loopback mode.
+    client_token: Option<String>,
 }
 
 impl HostAgent {
@@ -89,11 +92,20 @@ impl HostAgent {
             config.backend_password.clone(),
         )?);
         let security = config.security.clone();
+        let client_token = if security.is_some() {
+            Some(
+                derive_client_token(&config.token, &config.room)
+                    .map_err(|_| HostError::InvalidConfig("invalid relay credentials".into()))?,
+            )
+        } else {
+            None
+        };
         Ok(Self {
             config,
             relay,
             proxy,
             security,
+            client_token,
         })
     }
 
@@ -139,17 +151,19 @@ impl HostAgent {
             room: self.config.room.clone(),
             role: RelayRole::Host,
             token: self.config.token.clone(),
+            client_token: self.client_token.clone(),
             client_version: Some(env!("CARGO_PKG_VERSION").to_owned()),
         };
         match oct_transport::register(&conn, hello, RELAY_READY_TIMEOUT).await {
             Ok(_) => {}
             Err(TransportError::RelayRejected { code, .. }) if code == "UNAUTHORIZED" => {
-                // A different token can pin the room first (for example, a
-                // stale or revoked peer). Treat this as transient instead of
-                // exiting: a wrong token must not let a third party stop the
-                // host process.
+                // A stale room/client credential or a relay with a different
+                // admission token must not stop the host process. Retry with
+                // backoff and let the operator correct configuration.
                 conn.close().await;
-                tracing::warn!("relay rejected host registration (room token mismatch); retrying");
+                tracing::warn!(
+                    "relay rejected host registration (admission/client credential mismatch); retrying"
+                );
                 return ConnectionExit::Retry;
             }
             Err(_) => {
@@ -187,6 +201,7 @@ impl HostAgent {
             let session = match handshake {
                 Ok(Ok(session)) => session,
                 _ => {
+                    evict_client(&conn).await;
                     conn.close().await;
                     return ConnectionExit::Retry;
                 }
@@ -200,6 +215,7 @@ impl HostAgent {
                 {
                     Ok(Ok(prelude)) => prelude,
                     _ => {
+                        evict_client(&conn).await;
                         conn.close().await;
                         return ConnectionExit::Retry;
                     }
@@ -216,12 +232,14 @@ impl HostAgent {
                 _ => HostPrelude::rejected("device is not authorized or writer is active"),
             };
             if send_host_prelude(&conn, &response).await.is_err() {
+                evict_client(&conn).await;
                 conn.close().await;
                 return ConnectionExit::Retry;
             }
             let (device, _writer_lease) = match (authorization, writer_lease) {
                 (Ok(device), Some(lease)) => (device, lease),
                 _ => {
+                    evict_client(&conn).await;
                     conn.close().await;
                     return ConnectionExit::Retry;
                 }
@@ -323,6 +341,19 @@ fn validate_websocket_url(url: &Url, allow_public: bool) -> Result<(), HostError
         ));
     }
     Ok(())
+}
+
+/// Ask the relay to release the client slot after a failed handshake or
+/// device authorization. Best-effort: the relay may already have closed the
+/// socket, and the host always closes its own connection afterwards.
+async fn evict_client(conn: &oct_transport::WsConnection) {
+    if let Ok(text) = (RelayControl::Evict {
+        role: RelayRole::Client,
+    })
+    .encode()
+    {
+        let _ = conn.send_text(text).await;
+    }
 }
 
 async fn recv_client_prelude(

@@ -4,10 +4,11 @@ use std::time::Duration;
 use futures_util::StreamExt;
 use oct_client::{ClientConfig, TunnelClient};
 use oct_host::{HostAgent, HostConfig};
-use oct_protocol::relay::generate_room_credentials;
 use oct_relay::{Relay, RelayConfig};
 use serde_json::{json, Value};
 use tokio_util::sync::CancellationToken;
+
+mod support;
 
 static TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
@@ -23,6 +24,7 @@ impl Tunnel {
     async fn start(upstream: &str, backend_password: Option<String>) -> Self {
         let relay = Relay::bind(RelayConfig {
             listen: "127.0.0.1:0".parse().unwrap(),
+            admission_token: Some(support::ADMISSION.into()),
             ..RelayConfig::default()
         })
         .await
@@ -34,7 +36,7 @@ impl Tunnel {
             let _ = relay.serve(relay_task_shutdown).await;
         });
 
-        let (room, token) = generate_room_credentials();
+        let (room, token) = support::plaintext_credentials();
         let host_shutdown = CancellationToken::new();
         let host = HostAgent::new(HostConfig {
             relay_url: relay_url.clone(),

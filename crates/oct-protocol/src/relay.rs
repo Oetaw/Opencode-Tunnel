@@ -1,8 +1,8 @@
 //! Clear-text relay control envelope.
 //!
-//! The relay sees only: room id, role, optional Phase-1 pre-shared token,
-//! timing, and opaque binary frame sizes. Application HTTP headers and bodies
-//! are inside the opaque binary messages and are never parsed here.
+//! The relay sees only: room id, role, admission/client credentials, timing,
+//! and opaque binary frame sizes. Application HTTP headers and bodies are
+//! inside the opaque binary messages and are never parsed here.
 //!
 //! Control messages are JSON text websocket messages; every binary websocket
 //! message is relayed verbatim to the peer.
@@ -13,7 +13,11 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub const RELAY_PATH: &str = "/oct/v1";
-pub const RELAY_PROTOCOL: u8 = 1;
+/// Relay control protocol version.
+///
+/// Version 2 separates the host admission credential from the client
+/// credential and reserves room creation for authenticated hosts.
+pub const RELAY_PROTOCOL: u8 = 2;
 pub const MAX_CONTROL_BYTES: usize = 16 * 1024;
 pub const MAX_ROOM_ID_LEN: usize = 128;
 pub const MIN_ROOM_ID_LEN: usize = 16;
@@ -50,7 +54,14 @@ pub enum RelayControl {
         protocol: u8,
         room: String,
         role: RelayRole,
+        /// Host admission credential for `host`, client room credential for
+        /// `client`.
         token: String,
+        /// Client credential a host installs when it creates a room. Clients
+        /// never send this field. Optional so plaintext loopback rooms can use
+        /// the legacy single-token mode.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        client_token: Option<String>,
         #[serde(default)]
         client_version: Option<String>,
     },
@@ -63,6 +74,12 @@ pub enum RelayControl {
         role: RelayRole,
     },
     PeerLeft {
+        role: RelayRole,
+    },
+    /// Host-only request to remove the client slot after a failed device
+    /// authorization or Noise handshake. A revoked client must not be able to
+    /// hold the client slot forever.
+    Evict {
         role: RelayRole,
     },
     Ping,
@@ -103,6 +120,7 @@ impl fmt::Debug for RelayControl {
                 room,
                 role,
                 token: _,
+                client_token,
                 client_version,
             } => f
                 .debug_struct("Hello")
@@ -110,6 +128,7 @@ impl fmt::Debug for RelayControl {
                 .field("room", room)
                 .field("role", role)
                 .field("token", &"<redacted>")
+                .field("client_token", &client_token.as_ref().map(|_| "<redacted>"))
                 .field("client_version", client_version)
                 .finish(),
             Self::Ready {
@@ -124,6 +143,7 @@ impl fmt::Debug for RelayControl {
                 .finish(),
             Self::PeerJoined { role } => f.debug_struct("PeerJoined").field("role", role).finish(),
             Self::PeerLeft { role } => f.debug_struct("PeerLeft").field("role", role).finish(),
+            Self::Evict { role } => f.debug_struct("Evict").field("role", role).finish(),
             Self::Ping => f.write_str("Ping"),
             Self::Pong => f.write_str("Pong"),
             Self::Error { code, message: _ } => f
@@ -142,8 +162,9 @@ impl RelayControl {
         let Self::Hello {
             protocol,
             room,
-            role: _,
+            role,
             token,
+            client_token,
             client_version,
         } = self
         else {
@@ -154,6 +175,14 @@ impl RelayControl {
         }
         validate_room(room)?;
         validate_token(token)?;
+        if let Some(client_token) = client_token {
+            validate_token(client_token)?;
+            if *role == RelayRole::Client {
+                return Err(RelayError::InvalidControl(
+                    "client_token is host-only".into(),
+                ));
+            }
+        }
         if let Some(version) = client_version {
             if version.len() > 128 || !version.bytes().all(|b| (0x20..=0x7e).contains(&b)) {
                 return Err(RelayError::InvalidControl("client_version".into()));
@@ -257,6 +286,7 @@ mod tests {
             room: "0123456789abcdef".into(),
             role: RelayRole::Host,
             token: "x".repeat(64),
+            client_token: Some("y".repeat(64)),
             client_version: None,
         };
         let text = msg.encode().unwrap();
@@ -295,9 +325,39 @@ mod tests {
             room: "0123456789abcdef".into(),
             role: RelayRole::Host,
             token: String::new(),
+            client_token: None,
             client_version: None,
         };
         assert!(hello.validate_hello().is_err());
+    }
+
+    #[test]
+    fn client_hello_must_not_install_a_client_token() {
+        let hello = RelayControl::Hello {
+            protocol: RELAY_PROTOCOL,
+            room: "0123456789abcdef".into(),
+            role: RelayRole::Client,
+            token: "x".repeat(64),
+            client_token: Some("y".repeat(64)),
+            client_version: None,
+        };
+        assert!(hello.validate_hello().is_err());
+    }
+
+    #[test]
+    fn old_relay_protocol_is_rejected() {
+        let hello = RelayControl::Hello {
+            protocol: RELAY_PROTOCOL - 1,
+            room: "0123456789abcdef".into(),
+            role: RelayRole::Host,
+            token: "x".repeat(64),
+            client_token: Some("y".repeat(64)),
+            client_version: None,
+        };
+        assert!(matches!(
+            hello.validate_hello(),
+            Err(RelayError::UnsupportedProtocol(_))
+        ));
     }
 
     #[test]
@@ -307,10 +367,12 @@ mod tests {
             room: "0123456789abcdef".into(),
             role: RelayRole::Host,
             token: "secret-token".into(),
+            client_token: Some("client-secret-token".into()),
             client_version: None,
         };
         let text = format!("{hello:?}");
         assert!(!text.contains("secret-token"));
+        assert!(!text.contains("client-secret-token"));
         assert!(text.contains("<redacted>"));
     }
 }

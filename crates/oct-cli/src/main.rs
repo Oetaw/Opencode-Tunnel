@@ -14,8 +14,8 @@ use oct_protocol::relay::{
 };
 use oct_relay::{Relay, RelayConfig};
 use oct_security::{
-    parse_public_key, public_key_hex, ClientPrelude, ClientSecurity, DeviceStore, HostPrelude,
-    HostSecurity, Invite, Keystore, DEFAULT_INVITE_TTL,
+    derive_client_token, parse_public_key, public_key_hex, ClientPrelude, ClientSecurity,
+    DeviceStore, HostPrelude, HostSecurity, Invite, Keystore, DEFAULT_INVITE_TTL,
 };
 use oct_transport::{WsConnection, WsOptions};
 use serde::{Deserialize, Serialize};
@@ -60,6 +60,10 @@ struct RelayArgs {
     /// Explicitly allow a non-loopback bind. Requires Phase 2 E2EE on both endpoints.
     #[arg(long)]
     allow_public: bool,
+    /// Shared host admission secret. Must match the host's OCT_TOKEN.
+    /// Prefer the OCT_RELAY_ADMISSION_TOKEN environment variable.
+    #[arg(long, env = "OCT_RELAY_ADMISSION_TOKEN", hide_env_values = true)]
+    admission_token: Option<String>,
     /// Maximum number of concurrent in-memory rooms.
     #[arg(long, default_value_t = 512)]
     max_rooms: usize,
@@ -80,6 +84,7 @@ struct HostArgs {
     relay: String,
     #[arg(long, env = "OCT_ROOM")]
     room: String,
+    /// Host admission token; must match the relay.
     #[arg(long, env = "OCT_TOKEN")]
     token: Option<String>,
     #[arg(long, default_value = "http://127.0.0.1:4096")]
@@ -110,6 +115,7 @@ struct TuiArgs {
     relay: String,
     #[arg(long, env = "OCT_ROOM")]
     room: Option<String>,
+    /// Legacy plaintext room token; E2EE uses the paired client state.
     #[arg(long, env = "OCT_TOKEN")]
     token: Option<String>,
     #[arg(long, default_value = "opencode")]
@@ -142,6 +148,7 @@ struct InviteArgs {
     relay: String,
     #[arg(long, env = "OCT_ROOM")]
     room: String,
+    /// Host admission token; the invite receives a derived client token.
     #[arg(long, env = "OCT_TOKEN")]
     token: Option<String>,
     #[arg(long, default_value_t = DEFAULT_INVITE_TTL)]
@@ -226,10 +233,21 @@ async fn run_relay(args: RelayArgs) -> Result<()> {
     if let Some(url) = &args.public_url {
         tracing::info!(public_url = %url, "relay public URL configured for diagnostics only");
     }
+    let admission_token = match args.admission_token {
+        Some(token) => {
+            validate_token(&token).context("invalid relay admission token")?;
+            token
+        }
+        None => bail!(
+            "relay admission token is required; set --admission-token or \
+             OCT_RELAY_ADMISSION_TOKEN (generate with `openssl rand -hex 32`)"
+        ),
+    };
     let relay = Relay::bind(RelayConfig {
         listen: args.listen,
         public_url: args.public_url,
         allow_public: args.allow_public,
+        admission_token: Some(admission_token),
         max_rooms: args.max_rooms,
         max_queued_bytes: args.max_queued_bytes,
         ..RelayConfig::default()
@@ -383,13 +401,18 @@ struct ClientSessionFile {
 }
 
 async fn run_invite(args: InviteArgs) -> Result<()> {
-    let token = match args.token {
+    let host_token = match args.token {
         Some(token) => {
             validate_token(&token).context("invalid --token")?;
             token
         }
-        None => bail!("invite requires --token or OCT_TOKEN so the host can use the same room"),
+        None => bail!(
+            "invite requires the host admission token; set --token or OCT_TOKEN \
+             (the same value configured on the relay and host)"
+        ),
     };
+    let client_token =
+        derive_client_token(&host_token, &args.room).context("derive client invite token")?;
     let dir = resolve_state_dir(args.state_dir, "host")?;
     let keystore = if args.use_keyring {
         Keystore::with_keyring(&dir)
@@ -401,7 +424,7 @@ async fn run_invite(args: InviteArgs) -> Result<()> {
     let invite = Invite::new(
         args.relay,
         args.room,
-        token,
+        client_token,
         security.identity.public_key(),
         args.ttl_secs,
         args.label,
@@ -527,6 +550,7 @@ async fn run_pair(args: PairArgs) -> Result<()> {
         room: invite.room.clone(),
         role: RelayRole::Client,
         token: invite.token.clone(),
+        client_token: None,
         client_version: Some(env!("CARGO_PKG_VERSION").to_owned()),
     };
     oct_transport::register(&conn, hello, Duration::from_secs(10))
@@ -718,10 +742,10 @@ fn resolve_token(token: Option<String>) -> Result<String> {
         }
         None => {
             if !std::io::stderr().is_terminal() {
-                bail!("room token is required in non-interactive mode; set --token or OCT_TOKEN");
+                bail!("relay credential is required in non-interactive mode; set --token or OCT_TOKEN");
             }
             let (_, token) = generate_room_credentials();
-            eprintln!("one-time room token (share with the other endpoint): {token}");
+            eprintln!("one-time host admission token (configure the relay with it): {token}");
             Ok(token)
         }
     }

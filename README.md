@@ -53,13 +53,16 @@ The simplest public relay is Docker Compose with Caddy:
 ```sh
 cd deploy/relay
 cp .env.example .env
-# set OCT_DOMAIN and OCT_ACME_EMAIL
+# set OCT_DOMAIN, OCT_ACME_EMAIL and a random OCT_RELAY_ADMISSION_TOKEN
 docker compose -f compose.public.yaml up -d --build
 ```
 
 The relay is reachable at `wss://<OCT_DOMAIN>/oct/v1`. Caddy terminates TLS;
 only ports 80 and 443 are public. Kubernetes manifests are in
 [`deploy/kubernetes`](deploy/kubernetes).
+
+`OCT_RELAY_ADMISSION_TOKEN` is the host admission secret. It is never given to
+clients; clients receive only a room-scoped credential inside an invite.
 
 ### 2. Host
 
@@ -69,9 +72,10 @@ On the machine running OpenCode:
 mkdir -p ~/.config/oct/host
 chmod 700 ~/.config/oct/host
 
-# Same values on host and invite commands:
+# Copy OCT_RELAY_ADMISSION_TOKEN from deploy/relay/.env.
+# Never send OCT_TOKEN to clients; invites contain a derived client credential.
 export OCT_ROOM="$(openssl rand -hex 16)"
-export OCT_TOKEN="$(openssl rand -hex 32)"
+export OCT_TOKEN="<paste-relay-admission-token>"
 export OPENCODE_PASSWORD="$(openssl rand -base64 32)"
 
 oct host \
@@ -92,7 +96,9 @@ oct invite \
 ```
 
 `oct invite` prints the host fingerprint and writes a 0600 invite file. The
-invite expires after five minutes and can be used once.
+invite expires after five minutes and can be used once. It contains a
+room-scoped client credential derived from `OCT_TOKEN`; the host admission
+token itself is never placed in the invite.
 
 ### 3. Client
 
@@ -108,7 +114,8 @@ oct tui --state-dir ~/.config/oct/client --auto
 
 `oct tui` starts the authenticated loopback gateway and launches the unmodified
 OpenCode TUI against it. `--auto` enables OpenCode's auto-approval mode. Remove
-it if you want normal permission prompts.
+it if you want normal permission prompts. The paired client state already
+contains the room and client credential; clients do not need `OCT_TOKEN`.
 
 Use `--use-keyring` on `host`, `invite`, `pair`, and `tui` to keep private
 identities in macOS Keychain, Linux Secret Service, or Windows DPAPI.
@@ -154,7 +161,7 @@ reads repositories. Treat it as remote-code-execution-equivalent access.
   WebSocket route.
 - The host never accepts arbitrary upstream URLs; it dials one configured
   loopback origin.
-- Invite secrets, room tokens, provider credentials, PTY tickets and decrypted
+- Invite secrets, admission/client credentials, provider credentials, PTY tickets and decrypted
   traffic are never logged.
 
 This project has not completed an independent cryptographic audit. See

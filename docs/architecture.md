@@ -34,6 +34,11 @@ client                         relay                         host
 The relay only sees WSS frames. With E2EE enabled, every binary OCT frame is a
 Noise transport ciphertext. Text relay control messages remain outside Noise.
 
+The host presents a relay admission credential; clients present a separate
+room-scoped credential derived by the host with HMAC-SHA-256. Only an admitted
+host can create a room or occupy the host slot. A client token cannot be
+promoted to a host credential, and clients cannot create rooms.
+
 ## Streams
 
 - HTTP requests/responses use `OPEN_HTTP`, `HTTP_RESPONSE`, `DATA`, `END` and

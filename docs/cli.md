@@ -16,6 +16,7 @@
 
 ```sh
 export OCT_ROOM="$(openssl rand -hex 16)"
+# Must equal the relay's OCT_RELAY_ADMISSION_TOKEN. Never share with clients.
 export OCT_TOKEN="$(openssl rand -hex 32)"
 export OPENCODE_PASSWORD="$(openssl rand -base64 32)"
 
@@ -28,7 +29,12 @@ oct host \
 Useful flags: `--ping-secs`, `--reconnect-max-secs`,
 `--backend-password-env`, `--use-keyring`.
 
-If `OCT_TOKEN` is omitted, `host` and `tui` generate a one-time token only
+`OCT_TOKEN` is the host admission credential. The relay must be started with
+the same value in `OCT_RELAY_ADMISSION_TOKEN`. It is not a client credential:
+`oct invite` derives a separate room-scoped client token for the invite, and
+paired clients load it from their state.
+
+If `OCT_TOKEN` is omitted, `host` generates a one-time admission token only
 when stderr is a terminal. Non-interactive services must set `OCT_TOKEN` (or
 `--token`) explicitly; the CLI refuses to write a generated token to a log.
 
@@ -48,8 +54,10 @@ oct invite \
 - `--ttl-secs` defaults to 300.
 - `--output` writes only the URI to a 0600 file.
 - Without `--output`, the URI is printed as `pairing_uri=...`.
-- The invite is one-time and includes the relay URL, room, token, host public
-  key and secret.
+- The invite is one-time and includes the relay URL, room, a room-scoped
+  client token, host public key and secret. The `OCT_TOKEN` admission secret is
+  never included.
+- `--token` is the host admission token; it must match the host and relay.
 
 ## Pair
 
@@ -94,10 +102,17 @@ session within a few seconds.
 ## Relay
 
 ```sh
+export OCT_RELAY_ADMISSION_TOKEN="$(openssl rand -hex 32)"
+
 oct relay --listen 127.0.0.1:8080
 oct relay --listen 0.0.0.0:8080 --allow-public \
   --public-url wss://relay.example.com/oct/v1
 ```
+
+The admission token is required. Use the same value for the relay's
+`OCT_RELAY_ADMISSION_TOKEN` and the host's `OCT_TOKEN`. Clients never receive
+it. The relay uses it to reject unauthenticated room creation and host-role
+squatting; clients receive only a room-scoped token in an invite.
 
 `--max-rooms` (default 512) and `--max-queued-bytes` (default 33554432, or
 32 MiB) bound in-memory rooms and slow-peer buffering. If either limit is

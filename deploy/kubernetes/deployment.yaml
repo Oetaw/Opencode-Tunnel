@@ -56,6 +56,13 @@ spec:
           env:
             - name: RUST_LOG
               value: oct=info
+            # Must match OCT_TOKEN on every host. Create this secret before
+            # rollout; see deploy/kubernetes/README.md.
+            - name: OCT_RELAY_ADMISSION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: oct-relay-admission
+                  key: token
           readinessProbe:
             httpGet:
               path: /healthz
