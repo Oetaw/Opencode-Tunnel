@@ -122,6 +122,9 @@ struct TuiArgs {
     opencode: PathBuf,
     #[arg(long, default_value_t = 10)]
     connect_timeout_secs: u64,
+    /// Seconds to wait for the relay host before launching OpenCode.
+    #[arg(long, default_value_t = 90)]
+    wait_secs: u64,
     /// Start the TUI in auto-approve mode (`opencode --auto`).
     #[arg(long)]
     auto: bool,
@@ -354,8 +357,14 @@ async fn run_tui(args: TuiArgs) -> Result<()> {
         .await
         .context("start gateway")?;
     tracing::info!(local_url = %handle.local_url, "local gateway ready");
-    if !handle.wait_connected(Duration::from_secs(10)).await {
-        tracing::warn!("tunnel is not connected yet; starting the TUI anyway");
+    if !handle
+        .wait_connected(Duration::from_secs(args.wait_secs.max(1)))
+        .await
+    {
+        tracing::warn!(
+            wait_secs = args.wait_secs.max(1),
+            "tunnel is not connected yet; starting the TUI anyway"
+        );
     }
 
     let mut command = tokio::process::Command::new(&args.opencode);
